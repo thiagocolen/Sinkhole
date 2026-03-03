@@ -5,7 +5,6 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "gd-api-consumer-app",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -14,23 +13,28 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tsouza.gdrivesync"
     },
     "android": {
-      "package": "com.tsouza.gdrivesync",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "package": "com.tsouza.gdrivesync",
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "scheme": "gd-api-consumer-app",
     "plugins": [
-      "expo-web-browser",
-      "expo-secure-store"
-    ]
+      "@react-native-google-signin/google-signin"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b4174f64-ad5a-4de0-8888-9efe0eb06e2c"
+      }
+    }
   }
 }

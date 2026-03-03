@@ -3,16 +3,19 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "start": "expo start --tunnel",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "and": "npx expo run:android --no-build-cache"
   },
   "dependencies": {
+    "@react-native-google-signin/google-signin": "^16.1.1",
     "expo": "~54.0.33",
     "expo-auth-session": "~7.0.10",
     "expo-constants": "~18.0.13",
     "expo-crypto": "~15.0.8",
+    "expo-dev-client": "~6.0.20",
     "expo-document-picker": "~14.0.8",
     "expo-file-system": "~19.0.21",
     "expo-linking": "~8.0.11",
