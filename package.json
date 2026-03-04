@@ -7,7 +7,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "and": "npx expo run:android --no-build-cache"
+    "build:android": "npx expo run:android --no-build-cache",
+    "build:apk": "cd android && gradlew assembleRelease"
   },
   "dependencies": {
     "@react-native-google-signin/google-signin": "^16.1.1",
