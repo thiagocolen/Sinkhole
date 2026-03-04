@@ -76,7 +76,7 @@ export default function App() {
         setToken(storedToken);
 
         // Attempt to restore user info from Native SDK if possible
-        const isSignedIn = await GoogleSignin.isSignedIn();
+        const isSignedIn = await GoogleSignin.hasPreviousSignIn();
         if (isSignedIn) {
           const currentUser = await GoogleSignin.getCurrentUser();
           if (currentUser) {
