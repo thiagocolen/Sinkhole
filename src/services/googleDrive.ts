@@ -2,6 +2,12 @@ import * as FileSystem from 'expo-file-system';
 
 const DRIVE_API_URL = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API_URL = 'https://www.googleapis.com/upload/drive/v3/files';
+const MANIFEST_FILENAME = '.sync-manifest.json';
+
+// System/Trash files to ignore
+const IGNORE_LIST = ['.DS_Store', 'thumbs.db', '.trash', MANIFEST_FILENAME];
+const isIgnored = (name: string) => 
+  IGNORE_LIST.includes(name) || name.startsWith('.trashed-');
 
 export interface DriveFile {
   id: string;
@@ -11,15 +17,30 @@ export interface DriveFile {
   modifiedTime?: string;
 }
 
+interface ManifestEntry {
+  id: string;
+  lastMtime: number;
+  size: number;
+  isDir: boolean;
+}
+
+interface Manifest {
+  files: Record<string, ManifestEntry>;
+}
+
 /**
- * Service to handle Google Drive API interactions.
+ * Service to handle Google Drive API interactions with robust SAF support.
  */
 export const GoogleDriveService = {
   /**
-   * Find a folder by name or create it if it doesn't exist.
+   * Find a folder by name or create it if it doesn't exist on Google Drive.
    */
-  async findOrCreateFolder(folderName: string, accessToken: string): Promise<string> {
-    const query = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+  async findOrCreateFolder(folderName: string, accessToken: string, parentFolderId?: string): Promise<string> {
+    let query = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+    if (parentFolderId) {
+      query += ` and '${parentFolderId}' in parents`;
+    }
+    
     const response = await fetch(`${DRIVE_API_URL}?q=${encodeURIComponent(query)}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -29,21 +50,25 @@ export const GoogleDriveService = {
       return data.files[0].id;
     }
 
-    // Create the folder if not found
+    const metadata: any = {
+      name: folderName,
+      mimeType: 'application/vnd.google-apps.folder',
+    };
+    if (parentFolderId) {
+      metadata.parents = [parentFolderId];
+    }
+
     const createResponse = await fetch(DRIVE_API_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        name: folderName,
-        mimeType: 'application/vnd.google-apps.folder',
-      }),
+      body: JSON.stringify(metadata),
     });
 
     const folder = await createResponse.json();
-    if (!folder.id) throw new Error(`Failed to create folder: ${JSON.stringify(folder)}`);
+    if (!folder.id) throw new Error(`Failed to create remote folder: ${JSON.stringify(folder)}`);
     return folder.id;
   },
 
@@ -61,25 +86,22 @@ export const GoogleDriveService = {
   },
 
   /**
-   * Upload a file to a specific Google Drive folder using Multipart upload.
+   * Upload a file to Google Drive using multipart upload.
    */
   async uploadFile(
-    localUri: string,
+    localFile: FileSystem.File,
     fileName: string,
     parentFolderId: string,
     accessToken: string,
     existingFileId?: string
   ): Promise<any> {
-    const file = new FileSystem.File(localUri);
-    if (!file.exists) throw new Error(`File does not exist: ${localUri}`);
+    if (!localFile.exists) throw new Error(`Local file does not exist: ${localFile.uri}`);
 
-    // Read file content as base64 using the new API
-    const fileBase64 = await file.base64();
-
-    const metadata: any = {
-      name: fileName,
-    };
-    if (!existingFileId && parentFolderId) {
+    const fileBase64 = await localFile.base64();
+    const metadata: any = { name: fileName };
+    
+    // CRITICAL: parents field is NOT writable in update (PATCH) requests.
+    if (!existingFileId) {
       metadata.parents = [parentFolderId];
     }
 
@@ -97,7 +119,7 @@ export const GoogleDriveService = {
       closeDelimiter;
 
     const url = existingFileId
-      ? `${UPLOAD_API_URL}/${existingFileId}?uploadType=multipart${parentFolderId ? `&addParents=${parentFolderId}` : ''}`
+      ? `${UPLOAD_API_URL}/${existingFileId}?uploadType=multipart`
       : `${UPLOAD_API_URL}?uploadType=multipart`;
 
     const response = await fetch(url, {
@@ -110,132 +132,260 @@ export const GoogleDriveService = {
     });
 
     const result = await response.json();
-    if (!response.ok) {
-      console.error('[Upload Error] Details:', JSON.stringify(result, null, 2));
-      throw new Error(`Upload failed: ${JSON.stringify(result)}`);
-    }
+    if (!response.ok) throw new Error(`Upload failed: ${JSON.stringify(result)}`);
     return result;
   },
 
   /**
-   * Download a file from Google Drive to a local URI.
+   * Download a file from Google Drive.
    */
-  async downloadFile(fileId: string, localUri: string, accessToken: string): Promise<void> {
+  async downloadFile(fileId: string, targetFile: FileSystem.File, accessToken: string): Promise<void> {
     const url = `${DRIVE_API_URL}/${fileId}?alt=media`;
-    console.log(`[Download] Fetching ${fileId} to ${localUri}`);
     try {
-      // Workaround for content:// URIs: download to memory and write as base64
-      const response = await fetch(url, {
+      // Use static downloadFileAsync with idempotent: true to overwrite if exists
+      await FileSystem.File.downloadFileAsync(url, targetFile, {
         headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Download failed with status ${response.status}`);
-      }
-
-      const buffer = await response.arrayBuffer();
-      const base64 = this.arrayBufferToBase64(buffer);
-      
-      const file = new FileSystem.File(localUri);
-      file.write(base64, {
-        encoding: 'base64',
+        idempotent: true,
       });
     } catch (e) {
-      console.error(`[Download Error] Failed to download ${fileId}:`, e);
-      throw e;
+      console.warn(`[Sync] standard download failed, trying fallback:`, e);
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+      const buffer = await response.arrayBuffer();
+      // Writing directly to the file instance
+      await targetFile.write(new Uint8Array(buffer));
     }
   },
 
   /**
-   * Helper to convert ArrayBuffer to base64.
+   * Safely delete a file from Google Drive.
    */
-  arrayBufferToBase64(buffer: ArrayBuffer): string {
-    let binary = '';
-    const bytes = new Uint8Array(buffer);
-    const len = bytes.byteLength;
-    for (let i = 0; i < len; i++) {
-      binary += String.fromCharCode(bytes[i]);
+  async deleteRemoteFile(fileId: string, accessToken: string): Promise<void> {
+    const response = await fetch(`${DRIVE_API_URL}/${fileId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok && response.status !== 404) {
+      const error = await response.json();
+      throw new Error(`Failed to delete remote file: ${JSON.stringify(error)}`);
     }
-    // Using a reliable way to encode base64 in React Native/Expo
-    // Note: btoa might not handle large buffers well, but for standard markdown/small files it's okay.
-    // For very large files, a more robust chunked approach would be needed.
-    return btoa(binary);
   },
 
   /**
-   * Scan local directory and sync with Drive.
+   * Load or initialize a sync manifest for a directory.
+   */
+  async loadManifest(directory: FileSystem.Directory): Promise<Manifest> {
+    try {
+      // Find the manifest file in the directory list to avoid .create() errors
+      const entries = directory.list();
+      const manifestFile = entries.find(e => e.name === MANIFEST_FILENAME);
+      
+      if (manifestFile instanceof FileSystem.File) {
+        const content = await manifestFile.text();
+        return JSON.parse(content);
+      }
+    } catch (e) {
+      console.warn(`[Sync] Failed to load manifest:`, e);
+    }
+    return { files: {} };
+  },
+
+  /**
+   * Save a sync manifest for a directory.
+   */
+  async saveManifest(directory: FileSystem.Directory, manifest: Manifest): Promise<void> {
+    try {
+      const entries = directory.list();
+      let manifestFile = entries.find(e => e.name === MANIFEST_FILENAME);
+      
+      if (!(manifestFile instanceof FileSystem.File)) {
+        // Use parent.createFile instead of file.create() for SAF compliance
+        manifestFile = directory.createFile(MANIFEST_FILENAME, 'application/json');
+      }
+      
+      await (manifestFile as FileSystem.File).write(JSON.stringify(manifest, null, 2));
+    } catch (e) {
+      console.error(`[Sync] Failed to save manifest:`, e);
+    }
+  },
+
+  /**
+   * Main synchronization loop with robust SAF support and deletion tracking.
    */
   async syncDirectory(
-    directoryUri: string,
+    localUri: string,
     targetFolderName: string,
     accessToken: string,
-    onProgress: (message: string) => void
-  ): Promise<void> {
-    onProgress('Checking target folder on Drive...');
-    const driveFolderId = await this.findOrCreateFolder(targetFolderName, accessToken);
+    onProgress: (message: string) => void,
+    parentDriveFolderId?: string
+  ): Promise<string> {
+    onProgress(`Syncing: ${targetFolderName}`);
 
-    onProgress('Listing remote files...');
+    // 1. Remote Setup
+    const driveFolderId = await this.findOrCreateFolder(targetFolderName, accessToken, parentDriveFolderId);
     const remoteFiles = await this.listFilesInFolder(driveFolderId, accessToken);
-    const remoteFileMap = new Map(remoteFiles.map((f) => [f.name, f]));
+    const remoteMap = new Map(remoteFiles.map(f => [f.name, f]));
 
-    onProgress('Scanning local directory...');
-    const directory = new FileSystem.Directory(directoryUri);
-    const localEntries = directory.list();
+    // 2. Local Setup
+    const localDir = new FileSystem.Directory(localUri);
+    // SAF NOTE: We assume localDir exists because it was picked by the user or created by parent.
     
-    const localFileMap = new Map<string, FileSystem.File>();
-    for (const entry of localEntries) {
-      if (!(entry instanceof FileSystem.Directory)) {
-        localFileMap.set(entry.name, entry as FileSystem.File);
+    let localEntries: (FileSystem.File | FileSystem.Directory)[] = [];
+    try {
+      localEntries = localDir.list();
+    } catch (e) {
+      console.warn(`[Sync] Could not list local directory:`, e);
+    }
+    const localMap = new Map(localEntries.map(e => [e.name, e]));
+
+    // 3. Manifest Setup
+    const manifest = await this.loadManifest(localDir);
+    const newManifest: Manifest = { files: {} };
+
+    // 4. Combine all names to process (Local + Remote + Manifest)
+    const allNames = new Set([...localMap.keys(), ...remoteMap.keys(), ...Object.keys(manifest.files)]);
+
+    for (const name of allNames) {
+      if (isIgnored(name)) continue;
+
+      const local = localMap.get(name);
+      const remote = remoteMap.get(name);
+      const inManifest = manifest.files[name];
+
+      try {
+        // --- DELETION HANDLING ---
+        
+        // 1. Local Deletion: Existed in manifest, now missing locally, but still exists on Drive.
+        if (inManifest && !local && remote) {
+          onProgress(`Deleting remote (local deletion detected): ${name}`);
+          await this.deleteRemoteFile(remote.id, accessToken);
+          continue;
+        }
+
+        // 2. Remote Deletion: Existed in manifest, now missing on Drive, but still exists locally.
+        if (inManifest && local && !remote) {
+          onProgress(`Deleting local (remote deletion detected): ${name}`);
+          if (local instanceof FileSystem.File) local.delete();
+          else (local as FileSystem.Directory).delete();
+          continue;
+        }
+
+        // 3. Both Deleted: Cleanup (nothing to do, manifest entry won't be in newManifest)
+        if (inManifest && !local && !remote) {
+          continue;
+        }
+
+        // 4. Type mismatch / Conflict handling (Local exists, Remote exists, but they are different types)
+        const isRemoteDir = remote?.mimeType === 'application/vnd.google-apps.folder';
+        const isLocalDir = local instanceof FileSystem.Directory;
+
+        if (local && remote && isLocalDir !== isRemoteDir) {
+          onProgress(`Type mismatch conflict for ${name}. Prioritizing Remote.`);
+          if (isLocalDir) (local as FileSystem.Directory).delete();
+          else (local as FileSystem.File).delete();
+          // Force local to null so it's treated as "Remote Only" in next step
+          localMap.delete(name);
+          // Refresh local state will be handled below
+        }
+
+        // --- DIRECTORY SYNC ---
+        if (isRemoteDir || isLocalDir) {
+          let subDir = local instanceof FileSystem.Directory ? local : null;
+          if (!subDir && isRemoteDir) {
+            onProgress(`Creating local directory: ${name}`);
+            subDir = localDir.createDirectory(name);
+          }
+
+          if (subDir || isRemoteDir) {
+            const subDriveId = await this.syncDirectory(
+              subDir ? subDir.uri : "", 
+              name, 
+              accessToken, 
+              onProgress, 
+              driveFolderId
+            );
+            newManifest.files[name] = { id: subDriveId, lastMtime: 0, size: 0, isDir: true };
+            continue;
+          }
+        }
+
+        // --- FILE SYNC ---
+        // Skip Google Workspace files (Docs, Sheets, etc.)
+        if (remote?.mimeType.startsWith('application/vnd.google-apps.')) continue;
+
+        let finalId = remote?.id;
+        let finalMtime = 0;
+        let finalSize = 0;
+
+        if (local instanceof FileSystem.File && remote) {
+          // Both exist: check for updates
+          const localMtime = (local.modificationTime || 0) / 1000;
+          const remoteMtime = new Date(remote.modifiedTime!).getTime() / 1000;
+          const localSize = local.size || 0;
+          const remoteSize = parseInt(remote.size || '0');
+
+          // Check if either has changed since last sync (using manifest)
+          const hasLocalChanged = !inManifest || Math.abs(localMtime - inManifest.lastMtime) > 2 || localSize !== inManifest.size;
+          const hasRemoteChanged = !inManifest || Math.abs(remoteMtime - (new Date(remote.modifiedTime!).getTime() / 1000)) > 2 || remoteSize !== inManifest.size;
+
+          if (hasLocalChanged && !hasRemoteChanged) {
+            onProgress(`Uploading update: ${name}`);
+            const res = await this.uploadFile(local, name, driveFolderId, accessToken, remote.id);
+            finalId = res.id || remote.id;
+          } else if (hasRemoteChanged && !hasLocalChanged) {
+            onProgress(`Downloading update: ${name}`);
+            await this.downloadFile(remote.id, local, accessToken);
+          } else if (hasLocalChanged && hasRemoteChanged) {
+            // Conflict (LWW)
+            if (localMtime > remoteMtime) {
+              onProgress(`Conflict (LWW): Uploading local version of ${name}`);
+              await this.uploadFile(local, name, driveFolderId, accessToken, remote.id);
+            } else {
+              onProgress(`Conflict (LWW): Downloading remote version of ${name}`);
+              await this.downloadFile(remote.id, local, accessToken);
+            }
+          }
+          
+          finalId = remote.id;
+          finalMtime = (local.modificationTime || 0) / 1000;
+          finalSize = local.size || 0;
+
+        } else if (local instanceof FileSystem.File) {
+          // Local Only (New file): Only if it's NOT in the manifest
+          if (!inManifest) {
+            onProgress(`Uploading new: ${name}`);
+            const res = await this.uploadFile(local, name, driveFolderId, accessToken);
+            finalId = res.id;
+            finalMtime = (local.modificationTime || 0) / 1000;
+            finalSize = local.size || 0;
+          } else {
+            // It was in manifest but is missing on Drive. Already handled in deletion logic.
+          }
+
+        } else if (remote) {
+          // Remote Only (New file): Only if it's NOT in the manifest
+          if (!inManifest) {
+            onProgress(`Downloading new: ${name}`);
+            const targetFile = localDir.createFile(name, remote.mimeType || 'application/octet-stream');
+            await this.downloadFile(remote.id, targetFile, accessToken);
+            finalMtime = (targetFile.modificationTime || 0) / 1000;
+            finalSize = targetFile.size || 0;
+          } else {
+            // It was in manifest but is missing locally. Already handled in deletion logic.
+          }
+        }
+
+        if (finalId) {
+          newManifest.files[name] = { id: finalId, lastMtime: finalMtime, size: finalSize, isDir: false };
+        }
+      } catch (err: any) {
+        console.error(`[Sync Error] Failed to sync ${name}:`, err);
+        onProgress(`Error: ${name} - ${err.message}`);
+        if (inManifest) newManifest.files[name] = inManifest;
       }
     }
 
-    const allFileNames = new Set([...localFileMap.keys(), ...remoteFileMap.keys()]);
-
-    for (const fileName of allFileNames) {
-      const localFile = localFileMap.get(fileName);
-      const remoteFile = remoteFileMap.get(fileName);
-
-      // Skip remote folders and Google Workspace files (they need export, not download)
-      if (remoteFile) {
-        if (remoteFile.mimeType === 'application/vnd.google-apps.folder') {
-          onProgress(`Skipping folder ${fileName}...`);
-          continue;
-        }
-        if (remoteFile.mimeType.startsWith('application/vnd.google-apps.')) {
-          onProgress(`Skipping Google Workspace file ${fileName} (Not supported yet)...`);
-          continue;
-        }
-      }
-
-      if (localFile && remoteFile) {
-        // Bi-directional sync: compare modification times using modern File API
-        // Convert local milliseconds to seconds to match remoteMtime unit
-        const localMtime = (localFile.modificationTime || 0) / 1000;
-        const remoteMtime = new Date(remoteFile.modifiedTime!).getTime() / 1000;
-
-        // Use 2s tolerance for timestamp comparison
-        if (localMtime > remoteMtime + 2) {
-          onProgress(`Updating ${fileName} on Drive (Local is newer)...`);
-          await this.uploadFile(localFile.uri, fileName, driveFolderId, accessToken, remoteFile.id);
-        } else if (remoteMtime > localMtime + 2) {
-          onProgress(`Downloading ${fileName} from Drive (Remote is newer)...`);
-          await this.downloadFile(remoteFile.id, localFile.uri, accessToken);
-        } else {
-          onProgress(`Skipping ${fileName} (Up to date)`);
-        }
-      } else if (localFile) {
-        // Only local: Upload to Drive
-        onProgress(`Uploading new file ${fileName} to Drive...`);
-        await this.uploadFile(localFile.uri, fileName, driveFolderId, accessToken);
-      } else if (remoteFile) {
-        // Only remote: Download to Local
-        onProgress(`Downloading new file ${fileName} from Drive...`);
-        // Ensure URI is correctly constructed
-        const localUri = directoryUri.endsWith('/') ? `${directoryUri}${fileName}` : `${directoryUri}/${fileName}`;
-        await this.downloadFile(remoteFile.id, localUri, accessToken);
-      }
-    }
-
-    onProgress('Sync completed successfully!');
+    await this.saveManifest(localDir, newManifest);
+    return driveFolderId;
   },
 };

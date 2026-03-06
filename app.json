@@ -1,14 +1,14 @@
 {
   "expo": {
-    "name": "gd-api-consumer-app",
-    "slug": "gd-api-consumer-app",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "name": "Sinkhole",
+    "slug": "sinkhole",
+    "version": "1.0.2",
+    "orientation": "default",
+    "icon": "./assets/sinkhole-icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/sinkhole-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -18,18 +18,21 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/sinkhole-icon.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.tsouza.gdrivesync",
+      "versionCode": 3,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "scheme": "gd-api-consumer-app",
+    "scheme": "sinkhole",
     "plugins": [
-      "@react-native-google-signin/google-signin"
+      "@react-native-google-signin/google-signin",
+      "./withManageExternalStorage.js",
+      "expo-build-properties"
     ],
     "extra": {
       "eas": {

@@ -1,18 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, Button, ScrollView, Alert, TextInput, Platform, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { StyleSheet, Text, View, Button, ScrollView, Alert, TextInput, Platform, ActivityIndicator, TouchableOpacity, useWindowDimensions, useColorScheme, Image, Linking, AppState } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import * as SecureStore from 'expo-secure-store';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
 import { StatusBar } from 'expo-status-bar';
 import { GoogleDriveService } from './src/services/googleDrive';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ScreenOrientation from 'expo-screen-orientation';
 
 WebBrowser.maybeCompleteAuthSession();
 
-/**
- * Platform-aware storage wrapper.
- */
 const storage = {
   async getItem(key: string): Promise<string | null> {
     if (Platform.OS === 'web') return localStorage.getItem(key);
@@ -37,18 +37,62 @@ const storage = {
 const GOOGLE_TOKEN_KEY = 'google_access_token';
 const SYNC_FOLDER_KEY = 'sync_folder_path';
 const TARGET_FOLDER_KEY = 'target_folder_name';
-
-// OAuth Client IDs from Google Cloud Console
+const THEME_KEY = 'app_theme_mode';
 const WEB_CLIENT_ID = '757482518920-69oe97nn8t0h6bhil6ogr7ltonvusv4j.apps.googleusercontent.com';
 
-const StatusIndicator = ({ isAuthenticated }: { isAuthenticated: boolean }) => (
-  <View style={styles.statusContainer}>
+const HIDE_CONFIG = true;
+const SINKHOLE_NAME = 'SinkholeFolder';
+
+type ThemeMode = 'light' | 'dark' | 'system';
+
+const themes = {
+  light: {
+    background: '#e2ebe2',
+    card: '#ffffff',
+    text: '#333333',
+    subText: '#666666',
+    accent: '#2e7d32', // Dark Green
+    inputBg: '#fafafa',
+    inputBorder: '#e0e0e0',
+    debugBg: '#b6d3b6ff',
+    debugText: '#004600',
+    statusBg: '#ffffff',
+    statusBorder: '#eeeeee',
+    buttonDanger: '#d32f2f',
+    buttonSecondary: '#689f38', // Light Olive Green
+  },
+  dark: {
+    background: '#121212',
+    card: '#1e1e1e',
+    text: '#e0e0e0',
+    subText: '#aaaaaa',
+    accent: '#4caf50', // Bright Green
+    inputBg: '#2c2c2c',
+    inputBorder: '#444444',
+    debugBg: '#004600',
+    debugText: '#80ff80',
+    statusBg: '#2c2c2c',
+    statusBorder: '#444444',
+    buttonDanger: '#ef5350',
+    buttonSecondary: '#8bc34a', // Light Green
+  },
+};
+
+const StatusIndicator = ({ isAuthenticated, onPress, theme }: { isAuthenticated: boolean, onPress: () => void, theme: any }) => (
+  <TouchableOpacity
+    style={[styles.statusContainer, { backgroundColor: theme.statusBg, borderColor: theme.statusBorder }]}
+    onPress={onPress}
+  >
     <View style={[styles.statusIndicator, isAuthenticated ? styles.authenticated : styles.unauthenticated]} />
-    <Text style={styles.statusText}>{isAuthenticated ? 'Connected' : 'Disconnected'}</Text>
-  </View>
+    <Text style={[styles.statusText, { color: theme.subText }]}>{isAuthenticated ? 'Connected' : 'Disconnected'}</Text>
+  </TouchableOpacity>
 );
 
 export default function App() {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+  const systemColorScheme = useColorScheme();
+
   const [token, setToken] = useState<string | null>(null);
   const [userInfo, setUserInfo] = useState<any>(null);
   const [folderUri, setFolderUri] = useState<string | null>(null);
@@ -56,52 +100,78 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<string>('Not Synced');
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [debugLog, setDebugLog] = useState<string>('');
+  const [themeMode, setThemeMode] = useState<ThemeMode>('system');
+
+  const theme = useMemo(() => {
+    if (themeMode === 'system') {
+      return systemColorScheme === 'dark' ? themes.dark : themes.light;
+    }
+    return themeMode === 'dark' ? themes.dark : themes.light;
+  }, [themeMode, systemColorScheme]);
+
+  const isDarkActive = themeMode === 'dark' || (themeMode === 'system' && systemColorScheme === 'dark');
 
   useEffect(() => {
-    // Initialize Google Sign-In
-    GoogleSignin.configure({
-      webClientId: WEB_CLIENT_ID,
-      offlineAccess: true,
-      scopes: [
-        'https://www.googleapis.com/auth/drive.file',
-        'https://www.googleapis.com/auth/drive.metadata.readonly',
-      ],
-    });
-    loadStoredData();
+    async function init() {
+      await ScreenOrientation.unlockAsync();
+      GoogleSignin.configure({
+        webClientId: WEB_CLIENT_ID,
+        offlineAccess: true,
+        scopes: [
+          'https://www.googleapis.com/auth/drive',
+          'https://www.googleapis.com/auth/drive.metadata.readonly',
+        ],
+      });
+      loadStoredData();
+    }
+    init();
   }, []);
 
   async function loadStoredData() {
     try {
-      const storedToken = await storage.getItem(GOOGLE_TOKEN_KEY);
-      if (storedToken) {
-        setToken(storedToken);
-        const isSignedIn = await GoogleSignin.hasPreviousSignIn();
-        if (isSignedIn) {
-          const currentUser = await GoogleSignin.getCurrentUser();
-          if (currentUser) {
-            setUserInfo(currentUser.user);
+      const storedTheme = await storage.getItem(THEME_KEY);
+      if (storedTheme) setThemeMode(storedTheme as ThemeMode);
+
+      const isSignedIn = await GoogleSignin.hasPreviousSignIn();
+      if (isSignedIn) {
+        const currentUser = await GoogleSignin.getCurrentUser();
+        if (currentUser) {
+          setUserInfo(currentUser.user);
+          const tokens = await GoogleSignin.getTokens();
+          if (tokens.accessToken) {
+            setToken(tokens.accessToken);
           }
         }
+      } else {
+        handleLogin();
       }
 
       const storedFolder = await storage.getItem(SYNC_FOLDER_KEY);
       if (storedFolder) setFolderUri(storedFolder);
 
-      const storedTarget = await storage.getItem(TARGET_FOLDER_KEY);
-      if (storedTarget) setTargetFolderName(storedTarget);
+      // Always force Google Drive folder to SinkholeFolder
+      setTargetFolderName(SINKHOLE_NAME);
+      await storage.setItem(TARGET_FOLDER_KEY, SINKHOLE_NAME);
     } catch (e) {
       console.error('Persistence load error', e);
     }
   }
 
-  async function saveToken(accessToken: string) {
-    try {
-      await storage.setItem(GOOGLE_TOKEN_KEY, accessToken);
-      setToken(accessToken);
-    } catch (e: any) {
-      console.error('Save token error:', e);
-    }
-  }
+  const cycleTheme = async () => {
+    let nextMode: ThemeMode;
+    if (themeMode === 'dark') nextMode = 'light';
+    else if (themeMode === 'light') nextMode = 'system';
+    else nextMode = 'dark';
+
+    setThemeMode(nextMode);
+    await storage.setItem(THEME_KEY, nextMode);
+  };
+
+  const getThemeIcon = () => {
+    if (themeMode === 'dark') return '🌙';
+    if (themeMode === 'light') return '☀️';
+    return '⚙️';
+  };
 
   const handleLogin = async () => {
     setDebugLog('Starting login flow...');
@@ -113,11 +183,14 @@ export default function App() {
 
       if (tokens.accessToken) {
         setUserInfo(user);
-        saveToken(tokens.accessToken);
+        setToken(tokens.accessToken);
+        await storage.setItem(GOOGLE_TOKEN_KEY, tokens.accessToken);
         setDebugLog(`Logged in as: ${user?.name || user?.email}`);
       }
     } catch (error: any) {
-      setDebugLog(`Login Error: ${error.message}`);
+      if (error.code !== statusCodes.SIGN_IN_CANCELLED) {
+        setDebugLog(`Login Error: ${error.message}`);
+      }
     }
   };
 
@@ -133,16 +206,19 @@ export default function App() {
     }
   }
 
+  const toggleAuth = () => {
+    if (token) handleLogout();
+    else handleLogin();
+  };
+
   async function pickFolder() {
     try {
-      // Use the new Expo SDK 52+ FileSystem.Directory API
       const directory = await FileSystem.Directory.pickDirectoryAsync();
       if (directory && directory.uri) {
         setFolderUri(directory.uri);
         await storage.setItem(SYNC_FOLDER_KEY, directory.uri);
       }
     } catch (e: any) {
-      console.error(e);
       Alert.alert('Error', 'Failed to access local file system.');
     }
   }
@@ -158,40 +234,29 @@ export default function App() {
     setDebugLog('Sync Started...');
 
     try {
-      // 1. Refresh/get fresh tokens before starting
-      console.log('Refreshing Google tokens...');
       const tokens = await GoogleSignin.getTokens();
       const currentToken = tokens.accessToken;
 
-      if (!currentToken) {
-        throw new Error('Could not obtain fresh access token. Please login again.');
-      }
+      if (!currentToken) throw new Error('Session expired. Please login again.');
 
-      // Update state and storage with fresh token
       setToken(currentToken);
       await storage.setItem(GOOGLE_TOKEN_KEY, currentToken);
 
-      // 2. Perform sync
       await GoogleDriveService.syncDirectory(
         folderUri,
         targetFolderName,
         currentToken,
         (message) => {
-          console.log(`[Sync Progress] ${message}`);
           setDebugLog((prev) => `${prev}\n> ${message}`);
           setSyncStatus(message);
         }
       );
       setSyncStatus(`Last Sync: ${new Date().toLocaleTimeString()}`);
-      Alert.alert('Success', 'Sync completed successfully!');
     } catch (error: any) {
-      console.error('--- DETAILED SYNC ERROR ---');
-      console.error(error);
-      if (error.stack) console.error(error.stack);
-      console.error('---------------------------');
-      
-      const errorMsg = `Sync Error: ${error.message}`;
-      setDebugLog((prev) => `${prev}\n!! ${errorMsg}`);
+      console.error('[App] Sync Failed Detail:', error);
+      if (error.stack) console.error('[App] Sync Error Stack:', error.stack);
+
+      setDebugLog((prev) => `${prev}\n!! Sync Error: ${error.message}`);
       setSyncStatus('Failed');
       Alert.alert('Sync Failed', error.message);
     } finally {
@@ -199,92 +264,149 @@ export default function App() {
     }
   };
 
-  return (
-    <ScrollView style={styles.container}>
-      <StatusBar style="auto" />
-
-      <View style={styles.header}>
-        <Text style={styles.title}>GD Drive Sync</Text>
-        <StatusIndicator isAuthenticated={!!token} />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.label}>1. Authentication</Text>
-        {!token ? (
-          <Button title="Login with Google" onPress={handleLogin} />
-        ) : (
-          <View>
-            {userInfo && (
-              <Text style={styles.info}>User: {userInfo.name} ({userInfo.email})</Text>
-            )}
-            <Button title="Logout" onPress={handleLogout} color="#F44336" />
-          </View>
-        )}
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.label}>2. Local Folder</Text>
-        <Text style={styles.info} numberOfLines={1} ellipsizeMode="middle">
+  const mainContent = (
+    <>
+      <View style={[styles.section, { backgroundColor: theme.card, width: isLandscape ? '48.5%' : '100%' }]}>
+        <View style={styles.sectionTitleContainer}>
+          <MaterialCommunityIcons name="folder-outline" size={24} color={theme.accent} style={styles.sectionIcon} />
+          <Text style={[styles.label, { color: theme.text }]}>Local Folder</Text>
+        </View>
+        <Text style={[styles.info, { color: theme.subText }]} numberOfLines={1} ellipsizeMode="middle">
           {folderUri || 'No folder selected'}
         </Text>
-        <Button title="Select Folder" onPress={pickFolder} />
+        <Button title="Select Folder" onPress={pickFolder} color={theme.accent} />
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.label}>3. Drive Settings</Text>
-        <Text style={styles.subLabel}>Target Folder Name in Google Drive</Text>
-        <TextInput
-          style={styles.input}
-          value={targetFolderName}
-          onChangeText={(val) => {
-            setTargetFolderName(val);
-            storage.setItem(TARGET_FOLDER_KEY, val);
-          }}
-        />
-      </View>
+      {!HIDE_CONFIG && (
+        <View style={[styles.section, { backgroundColor: theme.card, width: isLandscape ? '48.5%' : '100%' }]}>
+          <View style={styles.sectionTitleContainer}>
+            <MaterialCommunityIcons name="google-drive" size={24} color="#34A853" style={styles.sectionIcon} />
+            <Text style={[styles.label, { color: theme.text }]}>Google Drive Folder</Text>
+          </View>
+          <Text style={[styles.subLabel, { color: theme.subText }]}>Target Folder Name</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: theme.inputBg, color: theme.text, borderColor: theme.inputBorder }]}
+            value={targetFolderName}
+            onChangeText={(val) => {
+              setTargetFolderName(val);
+              storage.setItem(TARGET_FOLDER_KEY, val);
+            }}
+          />
+        </View>
+      )}
 
-      <View style={styles.section}>
-        <Text style={styles.label}>Sync Dashboard</Text>
-        <Text style={styles.info}>Status: {syncStatus}</Text>
+      <View style={[styles.section, { backgroundColor: theme.card, width: isLandscape ? '48.5%' : '100%' }]}>
+        <View style={styles.sectionTitleContainer}>
+          <MaterialCommunityIcons name="sync" size={24} color={theme.accent} style={styles.sectionIcon} />
+          <Text style={[styles.label, { color: theme.text }]}>Sync Folders</Text>
+        </View>
+        <Text style={[styles.info, { color: theme.subText }]}>Status: {syncStatus}</Text>
         {isSyncing ? (
-          <ActivityIndicator size="large" color="#2196F3" />
+          <ActivityIndicator size="large" color={theme.accent} />
         ) : (
           <Button
             title="Sync Now"
             onPress={handleSync}
-            color="#2196F3"
+            color={theme.accent}
             disabled={!token || !folderUri}
           />
         )}
       </View>
+    </>
+  );
 
-      {debugLog ? (
-        <View style={styles.debugSection}>
-          <Text style={styles.label}>Debug Info</Text>
-          <ScrollView style={{ maxHeight: 500 }}>
-            <Text style={styles.debugText}>{debugLog}</Text>
-          </ScrollView>
-          <Button title="Clear Logs" onPress={() => setDebugLog('')} />
+  return (
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.background }]}
+      contentContainerStyle={[styles.contentContainer, isLandscape && { paddingHorizontal: 90 }]}
+    >
+      <StatusBar style={isDarkActive ? 'light' : 'dark'} />
+
+      <View style={[styles.header, { flexDirection: isLandscape ? 'row' : 'column', alignItems: isLandscape ? 'flex-start' : 'stretch' }]}>
+        {isLandscape ? (
+          <>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
+              <Image 
+                source={require('./assets/sinkhole-icon.png')} 
+                style={{ width: 60, height: 60, marginRight: 12, borderRadius: 8 }} 
+              />
+              <View>
+                <Text style={[styles.title, { color: theme.accent, fontSize: 30 }]}>Sinkhole</Text>
+                {userInfo && (
+                  <Text style={[styles.userInfoText, { color: theme.subText }]}>{userInfo.email}</Text>
+                )}
+              </View>
+            </View>
+            <View style={{ alignItems: 'center', flexDirection: 'row', justifyContent: 'flex-end' }}>
+              <StatusIndicator isAuthenticated={!!token} onPress={toggleAuth} theme={theme} />
+              <TouchableOpacity onPress={cycleTheme} style={[styles.themeToggle, { marginLeft: 10 }]}>
+                <Text style={{ fontSize: 20 }}>{getThemeIcon()}</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          <View style={{ alignItems: 'center', width: '100%' }}>
+            <Image 
+              source={require('./assets/sinkhole-icon.png')} 
+              style={{ width: 120, height: 120, borderRadius: 15, marginBottom: 15 }} 
+              resizeMode="contain"
+            />
+            <Text style={[styles.title, { color: theme.accent, fontSize: 32, textAlign: 'center' }]}>Wellcome!</Text>
+            {userInfo && (
+              <Text style={[styles.userInfoText, { color: theme.subText, fontSize: 16, textAlign: 'center', marginTop: 5, marginBottom: 20 }]}>
+                {userInfo.email}
+              </Text>
+            )}
+            <View style={{ width: '100%', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+              <TouchableOpacity onPress={cycleTheme} style={styles.themeToggle}>
+                <Text style={{ fontSize: 24 }}>{getThemeIcon()}</Text>
+              </TouchableOpacity>
+              <StatusIndicator isAuthenticated={!!token} onPress={toggleAuth} theme={theme} />
+            </View>
+          </View>
+        )}
+      </View>
+
+      <View style={isLandscape ? styles.landscapeGrid : styles.portraitStack}>
+        {mainContent}
+      </View>
+
+      <View style={[styles.debugSection, { backgroundColor: theme.debugBg, width: '100%' }]}>
+        <View style={styles.sectionTitleContainer}>
+          <MaterialCommunityIcons name="console" size={24} color="#a0ffa0" style={styles.sectionIcon} />
+          <Text style={[styles.label, { color: '#fff' }]}>Logs</Text>
         </View>
-      ) : null}
+        <ScrollView style={styles.debugScroll} nestedScrollEnabled={true}>
+          <Text style={[styles.debugText, { color: theme.debugText }]}>{debugLog || 'No logs yet...'}</Text>
+        </ScrollView>
+        <Button title="Clear Logs" onPress={() => setDebugLog('')} color={theme.buttonSecondary} />
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8f9fa', padding: 20, paddingTop: 60, paddingBottom: 500, borderWidth: 40, borderColor: '#967f93ff' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30 },
-  title: { fontSize: 28, fontWeight: 'bold', color: '#1a73e8' },
-  statusContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, borderWidth: 1, borderColor: '#eee' },
-  statusIndicator: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  container: { flex: 1 },
+  contentContainer: { padding: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 40 },
+  header: { justifyContent: 'space-between', marginBottom: 30 },
+  title: { fontSize: 24, fontWeight: 'bold' },
+  userInfoText: { fontSize: 12, marginTop: 2 },
+  themeToggle: { padding: 8, backgroundColor: 'rgba(0, 0, 0, 0.1)', borderRadius: 20, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  statusContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1 },
+  statusIndicator: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
   authenticated: { backgroundColor: '#4CAF50' },
   unauthenticated: { backgroundColor: '#F44336' },
-  statusText: { fontSize: 12, fontWeight: '600', color: '#666' },
-  section: { backgroundColor: '#ffffff', padding: 18, borderRadius: 15, marginBottom: 20, elevation: 3 },
-  label: { fontSize: 18, fontWeight: '700', marginBottom: 10, color: '#333' },
-  subLabel: { fontSize: 12, color: '#888', marginBottom: 5 },
-  info: { fontSize: 14, color: '#555', marginBottom: 12 },
-  input: { borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 10, padding: 12, fontSize: 16, backgroundColor: '#fafafa' },
-  debugSection: { backgroundColor: '#333', padding: 15, borderRadius: 15, marginTop: 20, marginBottom: 40 },
-  debugText: { color: '#0f0', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', fontSize: 12 },
+  statusText: { fontSize: 13, fontWeight: '600' },
+  portraitStack: { width: '100%' },
+  landscapeGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  section: { padding: 18, borderRadius: 15, marginBottom: 20, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+  sectionTitleContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  sectionIcon: { marginRight: 8 },
+  label: { fontSize: 18, fontWeight: '700' },
+  subLabel: { fontSize: 12, marginBottom: 5 },
+  info: { fontSize: 14, marginBottom: 12 },
+  input: { borderRadius: 10, padding: 12, fontSize: 16, borderWidth: 1 },
+  debugSection: { padding: 15, borderRadius: 15, marginTop: 10, marginBottom: 40 },
+  debugScroll: { minHeight: 120, maxHeight: 300, marginBottom: 15 },
+  debugText: { fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
 });
