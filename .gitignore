@@ -43,4 +43,5 @@ google-services.json
 
 # gemini
 .geminiignore
+/.gemini-ignore-folder
 gemini-prompt.md
