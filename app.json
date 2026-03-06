@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sinkhole",
     "slug": "sinkhole",
-    "version": "1.0.2",
+    "version": "0.1.0",
     "orientation": "default",
     "icon": "./assets/sinkhole-icon.png",
     "userInterfaceStyle": "light",
@@ -22,7 +22,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.tsouza.gdrivesync",
-      "versionCode": 3,
+      "versionCode": 4,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
