@@ -1,3 +1,4 @@
 node_modules/
 **/node_modules
-
+/.gemini-ignore-folder
+gemini-prompt.md
