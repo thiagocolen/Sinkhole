@@ -38,7 +38,7 @@ const GOOGLE_TOKEN_KEY = 'google_access_token';
 const SYNC_FOLDER_KEY = 'sync_folder_path';
 const TARGET_FOLDER_KEY = 'target_folder_name';
 const THEME_KEY = 'app_theme_mode';
-const WEB_CLIENT_ID = '757482518920-69oe97nn8t0h6bhil6ogr7ltonvusv4j.apps.googleusercontent.com';
+const WEB_CLIENT_ID = '572011650493-0nijokv3fm6p1dqtelbu1iisvt1fs42r.apps.googleusercontent.com';
 
 const HIDE_CONFIG = true;
 const SINKHOLE_NAME = 'SinkholeFolder';
@@ -117,10 +117,7 @@ export default function App() {
       GoogleSignin.configure({
         webClientId: WEB_CLIENT_ID,
         offlineAccess: true,
-        scopes: [
-          'https://www.googleapis.com/auth/drive',
-          'https://www.googleapis.com/auth/drive.metadata.readonly',
-        ],
+        scopes: ['profile', 'email', 'https://www.googleapis.com/auth/drive'],
       });
       loadStoredData();
     }
@@ -128,13 +125,16 @@ export default function App() {
   }, []);
 
   async function loadStoredData() {
+    console.log('[App] Loading stored data...');
     try {
       const storedTheme = await storage.getItem(THEME_KEY);
       if (storedTheme) setThemeMode(storedTheme as ThemeMode);
 
       const isSignedIn = await GoogleSignin.hasPreviousSignIn();
+      console.log('[App] Is signed in?', isSignedIn);
       if (isSignedIn) {
         const currentUser = await GoogleSignin.getCurrentUser();
+        console.log('[App] Current user:', currentUser?.user?.email);
         if (currentUser) {
           setUserInfo(currentUser.user);
           const tokens = await GoogleSignin.getTokens();
@@ -143,6 +143,7 @@ export default function App() {
           }
         }
       } else {
+        console.log('[App] No previous sign-in found, initiating login...');
         handleLogin();
       }
 
@@ -153,7 +154,7 @@ export default function App() {
       setTargetFolderName(SINKHOLE_NAME);
       await storage.setItem(TARGET_FOLDER_KEY, SINKHOLE_NAME);
     } catch (e) {
-      console.error('Persistence load error', e);
+      console.error('[App] Persistence load error:', e);
     }
   }
 
@@ -174,34 +175,65 @@ export default function App() {
   };
 
   const handleLogin = async () => {
+    console.log('[App] Starting login flow...');
     setDebugLog('Starting login flow...');
     try {
       await GoogleSignin.hasPlayServices();
       const response = await GoogleSignin.signIn();
+      console.log('[App] Login response received:', JSON.stringify(response, null, 2));
+
       const user = response.data?.user;
       const tokens = await GoogleSignin.getTokens();
 
       if (tokens.accessToken) {
+        console.log('[App] Login successful for:', user?.email);
         setUserInfo(user);
         setToken(tokens.accessToken);
         await storage.setItem(GOOGLE_TOKEN_KEY, tokens.accessToken);
         setDebugLog(`Logged in as: ${user?.name || user?.email}`);
+      } else {
+        console.warn('[App] Login succeeded but no access token received');
+        setDebugLog('Warning: No access token');
       }
     } catch (error: any) {
-      if (error.code !== statusCodes.SIGN_IN_CANCELLED) {
-        setDebugLog(`Login Error: ${error.message}`);
+      console.error('[App] Login Error Detail:', JSON.stringify(error, null, 2));
+      console.error('[App] Login Error Code:', error.code);
+      console.error('[App] Login Error Message:', error.message);
+      
+      let errorMessage = `Login Error (${error.code || 'unknown'}): ${error.message}`;
+
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        console.log('[App] Login cancelled by user');
+        errorMessage = 'Login cancelled';
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        console.log('[App] Login already in progress');
+        errorMessage = 'Login in progress...';
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        console.error('[App] Play services not available');
+        errorMessage = 'Error: Play services not available';
+      } else if (error.code === statusCodes.DEVELOPER_ERROR) {
+        console.error('[App] Developer Error (10): Check SHA-1, Package Name, and Web Client ID in Google Console');
+        errorMessage = 'Developer Error: Check Console Config';
+      } else if (error.code === '12500') {
+        console.error('[App] Sign-In Failed (12500): Likely a configuration mismatch or unverified test user');
+        errorMessage = 'Sign-In Failed (12500): Check Test Users';
       }
+      
+      setDebugLog(errorMessage);
     }
   };
 
   async function handleLogout() {
+    console.log('[App] Starting logout...');
     try {
       await GoogleSignin.signOut();
       await storage.deleteItem(GOOGLE_TOKEN_KEY);
       setToken(null);
       setUserInfo(null);
       setDebugLog('Logged out');
+      console.log('[App] Logout successful');
     } catch (error: any) {
+      console.error('[App] Logout Error:', error);
       setDebugLog(`Logout Error: ${error.message}`);
     }
   }
@@ -219,6 +251,7 @@ export default function App() {
         await storage.setItem(SYNC_FOLDER_KEY, directory.uri);
       }
     } catch (e: any) {
+      console.error('[App] Folder selection error:', e);
       Alert.alert('Error', 'Failed to access local file system.');
     }
   }
@@ -326,9 +359,9 @@ export default function App() {
         {isLandscape ? (
           <>
             <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
-              <Image 
-                source={require('./assets/sinkhole-icon.png')} 
-                style={{ width: 60, height: 60, marginRight: 12, borderRadius: 8 }} 
+              <Image
+                source={require('./assets/sinkhole-icon.png')}
+                style={{ width: 60, height: 60, marginRight: 12, borderRadius: 8 }}
               />
               <View>
                 <Text style={[styles.title, { color: theme.accent, fontSize: 30 }]}>Sinkhole</Text>
@@ -346,9 +379,9 @@ export default function App() {
           </>
         ) : (
           <View style={{ alignItems: 'center', width: '100%' }}>
-            <Image 
-              source={require('./assets/sinkhole-icon.png')} 
-              style={{ width: 120, height: 120, borderRadius: 15, marginBottom: 15 }} 
+            <Image
+              source={require('./assets/sinkhole-icon.png')}
+              style={{ width: 120, height: 120, borderRadius: 15, marginBottom: 15 }}
               resizeMode="contain"
             />
             <Text style={[styles.title, { color: theme.accent, fontSize: 32, textAlign: 'center' }]}>Wellcome!</Text>
