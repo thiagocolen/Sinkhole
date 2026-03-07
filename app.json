@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sinkhole",
     "slug": "sinkhole",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "default",
     "icon": "./assets/sinkhole-icon.png",
     "userInterfaceStyle": "light",
@@ -14,7 +14,8 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tsouza.gdrivesync"
+      "bundleIdentifier": "com.tsouza.gdrivesync",
+      "buildNumber": "5"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.tsouza.gdrivesync",
-      "versionCode": 4,
+      "versionCode": 5,
       "googleServicesFile": "./google-services.json"
     },
     "web": {

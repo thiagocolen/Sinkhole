@@ -36,6 +36,7 @@ export const GoogleDriveService = {
    * Find a folder by name or create it if it doesn't exist on Google Drive.
    */
   async findOrCreateFolder(folderName: string, accessToken: string, parentFolderId?: string): Promise<string> {
+    console.log(`[GoogleDrive] Searching for folder: ${folderName}`);
     let query = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     if (parentFolderId) {
       query += ` and '${parentFolderId}' in parents`;
@@ -45,11 +46,19 @@ export const GoogleDriveService = {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('[GoogleDrive] findOrCreateFolder Search Failed:', errorData);
+      throw new Error(`Folder search failed: ${response.status} ${JSON.stringify(errorData)}`);
+    }
+
     const data = await response.json();
     if (data.files && data.files.length > 0) {
+      console.log(`[GoogleDrive] Folder found: ${data.files[0].id}`);
       return data.files[0].id;
     }
 
+    console.log(`[GoogleDrive] Folder not found, creating: ${folderName}`);
     const metadata: any = {
       name: folderName,
       mimeType: 'application/vnd.google-apps.folder',
@@ -68,7 +77,12 @@ export const GoogleDriveService = {
     });
 
     const folder = await createResponse.json();
-    if (!folder.id) throw new Error(`Failed to create remote folder: ${JSON.stringify(folder)}`);
+    if (!createResponse.ok) {
+      console.error('[GoogleDrive] Folder Creation Failed:', folder);
+      throw new Error(`Failed to create remote folder: ${JSON.stringify(folder)}`);
+    }
+    
+    console.log(`[GoogleDrive] Folder created successfully: ${folder.id}`);
     return folder.id;
   },
 
@@ -81,8 +95,16 @@ export const GoogleDriveService = {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('[GoogleDrive] listFilesInFolder Failed:', errorData);
+      throw new Error(`Failed to list remote files: ${response.status} ${JSON.stringify(errorData)}`);
+    }
+
     const data = await response.json();
-    return data.files || [];
+    const files = data.files || [];
+    console.log(`[GoogleDrive] Found ${files.length} files in remote folder ${folderId}`);
+    return files;
   },
 
   /**
@@ -97,6 +119,8 @@ export const GoogleDriveService = {
   ): Promise<any> {
     if (!localFile.exists) throw new Error(`Local file does not exist: ${localFile.uri}`);
 
+    console.log(`[GoogleDrive] Uploading ${fileName} (${existingFileId ? 'Update' : 'New'})...`);
+    // Use modern base64() method
     const fileBase64 = await localFile.base64();
     const metadata: any = { name: fileName };
     
@@ -132,7 +156,11 @@ export const GoogleDriveService = {
     });
 
     const result = await response.json();
-    if (!response.ok) throw new Error(`Upload failed: ${JSON.stringify(result)}`);
+    if (!response.ok) {
+      console.error('[GoogleDrive] Upload Failed:', result);
+      throw new Error(`Upload failed: ${JSON.stringify(result)}`);
+    }
+    console.log(`[GoogleDrive] Upload successful: ${result.id}`);
     return result;
   },
 
@@ -141,19 +169,22 @@ export const GoogleDriveService = {
    */
   async downloadFile(fileId: string, targetFile: FileSystem.File, accessToken: string): Promise<void> {
     const url = `${DRIVE_API_URL}/${fileId}?alt=media`;
+    console.log(`[GoogleDrive] Downloading file ID: ${fileId} to ${targetFile.uri}...`);
     try {
-      // Use static downloadFileAsync with idempotent: true to overwrite if exists
+      // Use static downloadFileAsync which is standard in SDK 54
       await FileSystem.File.downloadFileAsync(url, targetFile, {
         headers: { Authorization: `Bearer ${accessToken}` },
         idempotent: true,
       });
+      console.log(`[GoogleDrive] Download successful via downloadFileAsync`);
     } catch (e) {
       console.warn(`[Sync] standard download failed, trying fallback:`, e);
       const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       if (!response.ok) throw new Error(`Download failed: ${response.status}`);
       const buffer = await response.arrayBuffer();
-      // Writing directly to the file instance
-      await targetFile.write(new Uint8Array(buffer));
+      // Writing directly to the file instance using synchronous write
+      targetFile.write(new Uint8Array(buffer));
+      console.log(`[GoogleDrive] Download successful via fallback buffer write`);
     }
   },
 
@@ -161,14 +192,17 @@ export const GoogleDriveService = {
    * Safely delete a file from Google Drive.
    */
   async deleteRemoteFile(fileId: string, accessToken: string): Promise<void> {
+    console.log(`[GoogleDrive] Deleting remote file ID: ${fileId}`);
     const response = await fetch(`${DRIVE_API_URL}/${fileId}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok && response.status !== 404) {
       const error = await response.json();
+      console.error('[GoogleDrive] Delete Failed:', error);
       throw new Error(`Failed to delete remote file: ${JSON.stringify(error)}`);
     }
+    console.log(`[GoogleDrive] Delete successful`);
   },
 
   /**
@@ -176,13 +210,17 @@ export const GoogleDriveService = {
    */
   async loadManifest(directory: FileSystem.Directory): Promise<Manifest> {
     try {
-      // Find the manifest file in the directory list to avoid .create() errors
+      // Find the manifest file in the directory list
+      // Note: directory.list() is synchronous in SDK 54
       const entries = directory.list();
       const manifestFile = entries.find(e => e.name === MANIFEST_FILENAME);
       
       if (manifestFile instanceof FileSystem.File) {
+        // Use modern text() method
         const content = await manifestFile.text();
-        return JSON.parse(content);
+        const parsed = JSON.parse(content);
+        console.log(`[Sync] Loaded manifest with ${Object.keys(parsed.files || {}).length} entries`);
+        return parsed;
       }
     } catch (e) {
       console.warn(`[Sync] Failed to load manifest:`, e);
@@ -196,14 +234,15 @@ export const GoogleDriveService = {
   async saveManifest(directory: FileSystem.Directory, manifest: Manifest): Promise<void> {
     try {
       const entries = directory.list();
-      let manifestFile = entries.find(e => e.name === MANIFEST_FILENAME);
+      let manifestFile = entries.find(e => e.name === MANIFEST_FILENAME) as FileSystem.File | undefined;
       
-      if (!(manifestFile instanceof FileSystem.File)) {
-        // Use parent.createFile instead of file.create() for SAF compliance
+      if (!manifestFile || !(manifestFile instanceof FileSystem.File)) {
+        // createFile is synchronous in SDK 54
         manifestFile = directory.createFile(MANIFEST_FILENAME, 'application/json');
       }
       
-      await (manifestFile as FileSystem.File).write(JSON.stringify(manifest, null, 2));
+      manifestFile.write(JSON.stringify(manifest, null, 2));
+      console.log(`[Sync] Saved manifest with ${Object.keys(manifest.files).length} entries`);
     } catch (e) {
       console.error(`[Sync] Failed to save manifest:`, e);
     }
@@ -219,6 +258,7 @@ export const GoogleDriveService = {
     onProgress: (message: string) => void,
     parentDriveFolderId?: string
   ): Promise<string> {
+    console.log(`[Sync] Starting sync for ${targetFolderName} (local: ${localUri})`);
     onProgress(`Syncing: ${targetFolderName}`);
 
     // 1. Remote Setup
@@ -237,6 +277,7 @@ export const GoogleDriveService = {
       console.warn(`[Sync] Could not list local directory:`, e);
     }
     const localMap = new Map(localEntries.map(e => [e.name, e]));
+    console.log(`[Sync] ${targetFolderName}: Found ${localEntries.length} local items and ${remoteFiles.length} remote items.`);
 
     // 3. Manifest Setup
     const manifest = await this.loadManifest(localDir);
@@ -244,6 +285,7 @@ export const GoogleDriveService = {
 
     // 4. Combine all names to process (Local + Remote + Manifest)
     const allNames = new Set([...localMap.keys(), ...remoteMap.keys(), ...Object.keys(manifest.files)]);
+    console.log(`[Sync] ${targetFolderName}: Total unique names to process: ${allNames.size}`);
 
     for (const name of allNames) {
       if (isIgnored(name)) continue;
@@ -293,6 +335,7 @@ export const GoogleDriveService = {
           let subDir = local instanceof FileSystem.Directory ? local : null;
           if (!subDir && isRemoteDir) {
             onProgress(`Creating local directory: ${name}`);
+            // createDirectory is synchronous in SDK 54
             subDir = localDir.createDirectory(name);
           }
 
@@ -326,7 +369,7 @@ export const GoogleDriveService = {
 
           // Check if either has changed since last sync (using manifest)
           const hasLocalChanged = !inManifest || Math.abs(localMtime - inManifest.lastMtime) > 2 || localSize !== inManifest.size;
-          const hasRemoteChanged = !inManifest || Math.abs(remoteMtime - (new Date(remote.modifiedTime!).getTime() / 1000)) > 2 || remoteSize !== inManifest.size;
+          const hasRemoteChanged = !inManifest || Math.abs(remoteMtime - inManifest.lastMtime) > 2 || remoteSize !== inManifest.size;
 
           if (hasLocalChanged && !hasRemoteChanged) {
             onProgress(`Uploading update: ${name}`);
@@ -366,10 +409,12 @@ export const GoogleDriveService = {
           // Remote Only (New file): Only if it's NOT in the manifest
           if (!inManifest) {
             onProgress(`Downloading new: ${name}`);
+            // createFile is synchronous in SDK 54
             const targetFile = localDir.createFile(name, remote.mimeType || 'application/octet-stream');
             await this.downloadFile(remote.id, targetFile, accessToken);
             finalMtime = (targetFile.modificationTime || 0) / 1000;
             finalSize = targetFile.size || 0;
+            finalId = remote.id;
           } else {
             // It was in manifest but is missing locally. Already handled in deletion logic.
           }
