@@ -267,18 +267,26 @@ export default function App() {
     setDebugLog('Sync Started...');
 
     try {
-      const tokens = await GoogleSignin.getTokens();
-      const currentToken = tokens.accessToken;
-
-      if (!currentToken) throw new Error('Session expired. Please login again.');
-
-      setToken(currentToken);
-      await storage.setItem(GOOGLE_TOKEN_KEY, currentToken);
+      // The token provider function that will be called by GoogleDriveService
+      // whenever a token is needed or a retry is required.
+      const tokenProvider = async () => {
+        try {
+          const tokens = await GoogleSignin.getTokens();
+          if (tokens.accessToken) {
+            setToken(tokens.accessToken); // Update UI state
+            await storage.setItem(GOOGLE_TOKEN_KEY, tokens.accessToken);
+            return tokens.accessToken;
+          }
+        } catch (e) {
+          console.error('[App] Failed to get fresh tokens:', e);
+        }
+        return null;
+      };
 
       await GoogleDriveService.syncDirectory(
         folderUri,
         targetFolderName,
-        currentToken,
+        tokenProvider,
         (message) => {
           setDebugLog((prev) => `${prev}\n> ${message}`);
           setSyncStatus(message);
