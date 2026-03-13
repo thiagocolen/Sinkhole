@@ -330,13 +330,14 @@ export const GoogleDriveService = {
     onProgress: (message: string) => void,
     parentDriveFolderId?: string,
     customIgnoreList: string[] = [],
-    relativePath: string = ''
+    relativePath: string = '',
+    existingDriveFolderId?: string
   ): Promise<string> {
     console.log(`[Sync] Starting sync for ${targetFolderName} (local: ${decodeURIComponent(localUri)})`);
     onProgress(`Syncing: ${targetFolderName}`);
 
     // 1. Remote Setup
-    const driveFolderId = await this.findOrCreateFolder(targetFolderName, accessToken, parentDriveFolderId);
+    const driveFolderId = existingDriveFolderId || await this.findOrCreateFolder(targetFolderName, accessToken, parentDriveFolderId);
     const remoteFiles = await this.listFilesInFolder(driveFolderId, accessToken);
     const remoteMap = new Map(remoteFiles.map(f => [f.name, f]));
 
@@ -500,7 +501,8 @@ export const GoogleDriveService = {
               onProgress, 
               driveFolderId,
               currentIgnoreList,
-              relativePath ? `${relativePath}/${name}` : name
+              relativePath ? `${relativePath}/${name}` : name,
+              remote?.id
             );
             newManifest.files[name] = { id: subDriveId, localMtime: 0, remoteMtime: 0, size: 0, isDir: true };
             continue;
