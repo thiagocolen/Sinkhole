@@ -79,27 +79,61 @@ export class UnauthorizedError extends Error {
 }
 
 /**
+ * Type for a function that provides a valid access token, refreshing if necessary.
+ */
+export type TokenProvider = () => Promise<string | null>;
+
+/**
  * Service to handle Google Drive API interactions with robust SAF support.
  */
 export const GoogleDriveService = {
   /**
+   * Helper to perform a fetch with a single retry on 401.
+   */
+  async fetchWithRetry(
+    url: string,
+    options: RequestInit,
+    getToken: TokenProvider
+  ): Promise<Response> {
+    const performFetch = async (token: string | null) => {
+      if (!token) throw new UnauthorizedError('No access token available');
+      return fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    };
+
+    let token = await getToken();
+    let response = await performFetch(token);
+
+    if (response.status === 401) {
+      console.log('[GoogleDrive] 401 detected, attempting token refresh...');
+      token = await getToken(); // getToken should handle the refresh logic
+      response = await performFetch(token);
+    }
+
+    return response;
+  },
+
+  /**
    * Find a folder by name or create it if it doesn't exist on Google Drive.
    */
-  async findOrCreateFolder(folderName: string, accessToken: string, parentFolderId?: string): Promise<string> {
+  async findOrCreateFolder(folderName: string, getToken: TokenProvider, parentFolderId?: string): Promise<string> {
     console.log(`[GoogleDrive] Searching for folder: ${folderName}`);
     let query = `name = '${folderName}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     if (parentFolderId) {
       query += ` and '${parentFolderId}' in parents`;
     }
 
-    const response = await fetch(`${DRIVE_API_URL}?q=${encodeURIComponent(query)}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (response.status === 401) throw new UnauthorizedError();
+    const url = `${DRIVE_API_URL}?q=${encodeURIComponent(query)}`;
+    const response = await this.fetchWithRetry(url, {}, getToken);
 
     if (!response.ok) {
       const errorData = await response.json();
+      if (response.status === 401) throw new UnauthorizedError();
       console.error('[GoogleDrive] findOrCreateFolder Search Failed:', errorData);
       throw new Error(`Folder search failed: ${response.status} ${JSON.stringify(errorData)}`);
     }
@@ -119,19 +153,15 @@ export const GoogleDriveService = {
       metadata.parents = [parentFolderId];
     }
 
-    const createResponse = await fetch(DRIVE_API_URL, {
+    const createResponse = await this.fetchWithRetry(DRIVE_API_URL, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(metadata),
-    });
-
-    if (createResponse.status === 401) throw new UnauthorizedError();
+    }, getToken);
 
     const folder = await createResponse.json();
     if (!createResponse.ok) {
+      if (createResponse.status === 401) throw new UnauthorizedError();
       console.error('[GoogleDrive] Folder Creation Failed:', folder);
       throw new Error(`Failed to create remote folder: ${JSON.stringify(folder)}`);
     }
@@ -143,24 +173,38 @@ export const GoogleDriveService = {
   /**
    * List all files within a specific Google Drive folder.
    */
-  async listFilesInFolder(folderId: string, accessToken: string): Promise<DriveFile[]> {
+  async listFilesInFolder(folderId: string, getToken: TokenProvider): Promise<DriveFile[]> {
+    console.log(`[GoogleDrive] Listing files in remote folder ${folderId}...`);
+    let allFiles: DriveFile[] = [];
+    let pageToken: string | undefined = undefined;
     const query = `'${folderId}' in parents and trashed = false`;
-    const response = await fetch(`${DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id, name, mimeType, size, modifiedTime)`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
 
-    if (response.status === 401) throw new UnauthorizedError();
+    do {
+      let url = `${DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id, name, mimeType, size, modifiedTime),nextPageToken&pageSize=1000`;
+      if (pageToken) {
+        url += `&pageToken=${pageToken}`;
+      }
+      console.log(`[GoogleDrive] Fetching page... (token: ${pageToken ? 'yes' : 'no'})`);
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('[GoogleDrive] listFilesInFolder Failed:', errorData);
-      throw new Error(`Failed to list remote files: ${response.status} ${JSON.stringify(errorData)}`);
-    }
+      const response = await this.fetchWithRetry(url, {}, getToken);
 
-    const data = await response.json();
-    const files = data.files || [];
-    console.log(`[GoogleDrive] Found ${files.length} files in remote folder ${folderId}`);
-    return files;
+      if (!response.ok) {
+        const errorData = await response.json();
+        if (response.status === 401) throw new UnauthorizedError();
+        console.error('[GoogleDrive] listFilesInFolder page fetch Failed:', errorData);
+        throw new Error(`Failed to list remote files: ${response.status} ${JSON.stringify(errorData)}`);
+      }
+
+      const data = await response.json();
+      if (data.files) {
+        allFiles = allFiles.concat(data.files);
+      }
+      pageToken = data.nextPageToken;
+
+    } while (pageToken);
+
+    console.log(`[GoogleDrive] Found a total of ${allFiles.length} files in remote folder ${folderId}`);
+    return allFiles;
   },
 
   /**
@@ -170,7 +214,7 @@ export const GoogleDriveService = {
     localFile: FileSystem.File,
     fileName: string,
     parentFolderId: string,
-    accessToken: string,
+    getToken: TokenProvider,
     existingFileId?: string
   ): Promise<any> {
     if (!localFile.exists) throw new Error(`Local file does not exist: ${decodeURIComponent(localFile.uri)}`);
@@ -202,19 +246,17 @@ export const GoogleDriveService = {
       ? `${UPLOAD_API_URL}/${existingFileId}?uploadType=multipart`
       : `${UPLOAD_API_URL}?uploadType=multipart`;
 
-    const response = await fetch(url, {
+    const response = await this.fetchWithRetry(url, {
       method: existingFileId ? 'PATCH' : 'POST',
       headers: {
-        Authorization: `Bearer ${accessToken}`,
         'Content-Type': `multipart/related; boundary=${boundary}`,
       },
       body: multipartBody,
-    });
-
-    if (response.status === 401) throw new UnauthorizedError();
+    }, getToken);
 
     const result = await response.json();
     if (!response.ok) {
+      if (response.status === 401) throw new UnauthorizedError();
       console.error('[GoogleDrive] Upload Failed:', result);
       throw new Error(`Upload failed: ${JSON.stringify(result)}`);
     }
@@ -225,30 +267,41 @@ export const GoogleDriveService = {
   /**
    * Download a file from Google Drive.
    */
-  async downloadFile(fileId: string, targetFile: FileSystem.File, accessToken: string): Promise<void> {
+  async downloadFile(fileId: string, targetFile: FileSystem.File, getToken: TokenProvider): Promise<void> {
     const url = `${DRIVE_API_URL}/${fileId}?alt=media`;
     console.log(`[GoogleDrive] Downloading file ID: ${fileId} to ${decodeURIComponent(targetFile.uri)}...`);
-    try {
-      // Use static downloadFileAsync which is standard in SDK 54
-      const result = await FileSystem.File.downloadFileAsync(url, targetFile, {
-        headers: { Authorization: `Bearer ${accessToken}` },
+    
+    const performDownload = async (token: string | null) => {
+      if (!token) throw new UnauthorizedError();
+      return FileSystem.File.downloadFileAsync(url, targetFile, {
+        headers: { Authorization: `Bearer ${token}` },
         idempotent: true,
       });
+    };
 
-      // Checking for 401 status in downloadFileAsync result if available
-      // In some Expo versions, this might throw or return a status.
-      // We also check the fallback.
-    } catch (e: any) {
-      // If we get a 401 here, we throw UnauthorizedError
-      if (e.message?.includes('401') || e.status === 401) {
-        throw new UnauthorizedError();
+    try {
+      let token = await getToken();
+      try {
+        await performDownload(token);
+      } catch (e: any) {
+        // If downloadFileAsync throws on 401 (some versions do)
+        if (e.message?.includes('401') || e.status === 401) {
+          console.log('[GoogleDrive] 401 on download, retrying...');
+          token = await getToken();
+          await performDownload(token);
+        } else {
+          throw e;
+        }
       }
-
+    } catch (e: any) {
       console.warn(`[Sync] standard download failed, trying fallback:`, e);
-      const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       
-      if (response.status === 401) throw new UnauthorizedError();
-      if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+      const response = await this.fetchWithRetry(url, {}, getToken);
+      
+      if (!response.ok) {
+        if (response.status === 401) throw new UnauthorizedError();
+        throw new Error(`Download failed: ${response.status}`);
+      }
       
       const buffer = await response.arrayBuffer();
       // Writing directly to the file instance using synchronous write
@@ -260,16 +313,14 @@ export const GoogleDriveService = {
   /**
    * Safely delete a file from Google Drive.
    */
-  async deleteRemoteFile(fileId: string, accessToken: string): Promise<void> {
+  async deleteRemoteFile(fileId: string, getToken: TokenProvider): Promise<void> {
     console.log(`[GoogleDrive] Deleting remote file ID: ${fileId}`);
-    const response = await fetch(`${DRIVE_API_URL}/${fileId}`, {
+    const response = await this.fetchWithRetry(`${DRIVE_API_URL}/${fileId}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (response.status === 401) throw new UnauthorizedError();
+    }, getToken);
 
     if (!response.ok && response.status !== 404) {
+      if (response.status === 401) throw new UnauthorizedError();
       const error = await response.json();
       console.error('[GoogleDrive] Delete Failed:', error);
       throw new Error(`Failed to delete remote file: ${JSON.stringify(error)}`);
@@ -326,18 +377,19 @@ export const GoogleDriveService = {
   async syncDirectory(
     localUri: string,
     targetFolderName: string,
-    accessToken: string,
+    getToken: TokenProvider,
     onProgress: (message: string) => void,
     parentDriveFolderId?: string,
     customIgnoreList: string[] = [],
-    relativePath: string = ''
+    relativePath: string = '',
+    existingDriveFolderId?: string
   ): Promise<string> {
     console.log(`[Sync] Starting sync for ${targetFolderName} (local: ${decodeURIComponent(localUri)})`);
     onProgress(`Syncing: ${targetFolderName}`);
 
     // 1. Remote Setup
-    const driveFolderId = await this.findOrCreateFolder(targetFolderName, accessToken, parentDriveFolderId);
-    const remoteFiles = await this.listFilesInFolder(driveFolderId, accessToken);
+    const driveFolderId = existingDriveFolderId || await this.findOrCreateFolder(targetFolderName, getToken, parentDriveFolderId);
+    const remoteFiles = await this.listFilesInFolder(driveFolderId, getToken);
     const remoteMap = new Map(remoteFiles.map(f => [f.name, f]));
 
     // 2. Local Setup
@@ -372,18 +424,18 @@ export const GoogleDriveService = {
             console.log(`[Sync] ${IGNORE_FILENAME} times: Local ${localMtime}, Remote ${remoteMtime}`);
             if (localMtime > remoteMtime + 2) {
               console.log(`[Sync] Uploading newer local ${IGNORE_FILENAME}`);
-              await this.uploadFile(localIgnore, IGNORE_FILENAME, driveFolderId, accessToken, remoteIgnore.id);
+              await this.uploadFile(localIgnore, IGNORE_FILENAME, driveFolderId, getToken, remoteIgnore.id);
             } else if (remoteMtime > localMtime + 2) {
               console.log(`[Sync] Downloading newer remote ${IGNORE_FILENAME}`);
-              await this.downloadFile(remoteIgnore.id, localIgnore, accessToken);
+              await this.downloadFile(remoteIgnore.id, localIgnore, getToken);
             }
           } else if (localIgnore instanceof FileSystem.File) {
             console.log(`[Sync] Uploading new local ${IGNORE_FILENAME}`);
-            await this.uploadFile(localIgnore, IGNORE_FILENAME, driveFolderId, accessToken);
+            await this.uploadFile(localIgnore, IGNORE_FILENAME, driveFolderId, getToken);
           } else if (remoteIgnore) {
             console.log(`[Sync] Downloading new remote ${IGNORE_FILENAME}`);
             const targetFile = localDir.createFile(IGNORE_FILENAME, remoteIgnore.mimeType || 'text/plain');
-            await this.downloadFile(remoteIgnore.id, targetFile, accessToken);
+            await this.downloadFile(remoteIgnore.id, targetFile, getToken);
           }
 
           // Load patterns from the now-synced local file
@@ -456,7 +508,7 @@ export const GoogleDriveService = {
         // 1. Local Deletion: Existed in manifest, now missing locally, but still exists on Drive.
         if (inManifest && !local && remote) {
           onProgress(`Deleting remote (local deletion detected): ${name}`);
-          await this.deleteRemoteFile(remote.id, accessToken);
+          await this.deleteRemoteFile(remote.id, getToken);
           continue;
         }
 
@@ -485,25 +537,36 @@ export const GoogleDriveService = {
 
         // --- DIRECTORY SYNC ---
         if (isRemoteDir || isLocalDir) {
+          const currentPath = relativePath ? `${relativePath}/${name}` : name;
+          console.log(`[Sync] Processing directory: '${currentPath}'`);
+          onProgress(`Processing directory: ${name}`);
           let subDir = local instanceof FileSystem.Directory ? local : null;
+          
           if (!subDir && isRemoteDir) {
             onProgress(`Creating local directory: ${name}`);
             // createDirectory is synchronous in SDK 54
             subDir = localDir.createDirectory(name);
           }
 
-          if (subDir || isRemoteDir) {
+          if (subDir) {
+            console.log(`[Sync] Recursing into directory: '${currentPath}'`);
             const subDriveId = await this.syncDirectory(
-              subDir ? subDir.uri : "", 
+              subDir.uri, 
               name, 
-              accessToken, 
+              getToken, 
               onProgress, 
               driveFolderId,
               currentIgnoreList,
-              relativePath ? `${relativePath}/${name}` : name
+              relativePath ? `${relativePath}/${name}` : name,
+              remote?.id
             );
             newManifest.files[name] = { id: subDriveId, localMtime: 0, remoteMtime: 0, size: 0, isDir: true };
             continue;
+          } else if (isRemoteDir) {
+             // Fallback if local directory creation failed for some reason, but we have a remote ID
+             onProgress(`Warning: Could not create or access local directory ${name}. Skipping its contents.`);
+             newManifest.files[name] = { id: remote!.id, localMtime: 0, remoteMtime: 0, size: 0, isDir: true };
+             continue;
           }
         }
 
@@ -529,7 +592,7 @@ export const GoogleDriveService = {
 
           if (hasLocalChanged && !hasRemoteChanged) {
             onProgress(`Uploading update: ${name}`);
-            const res = await this.uploadFile(local, name, driveFolderId, accessToken, remote.id);
+            const res = await this.uploadFile(local, name, driveFolderId, getToken, remote.id);
             finalId = res.id || remote.id;
 
             // Re-fetch local metadata to get actual modification time after upload (if changed)
@@ -539,7 +602,7 @@ export const GoogleDriveService = {
             finalSize = freshLocal.size || 0;
           } else if (hasRemoteChanged && !hasLocalChanged) {
             onProgress(`Downloading update: ${name}`);
-            await this.downloadFile(remote.id, local, accessToken);
+            await this.downloadFile(remote.id, local, getToken);
 
             // Re-fetch local metadata to get ACTUAL modification time after download
             const freshLocal = new FileSystem.File(local.uri);
@@ -550,7 +613,7 @@ export const GoogleDriveService = {
             // Conflict (LWW)
             if (localMtime > remoteMtime) {
               onProgress(`Conflict (LWW): Uploading local version of ${name}`);
-              const res = await this.uploadFile(local, name, driveFolderId, accessToken, remote.id);
+              const res = await this.uploadFile(local, name, driveFolderId, getToken, remote.id);
 
               const freshLocal = new FileSystem.File(local.uri);
               finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
@@ -558,7 +621,7 @@ export const GoogleDriveService = {
               finalSize = freshLocal.size || 0;
             } else {
               onProgress(`Conflict (LWW): Downloading remote version of ${name}`);
-              await this.downloadFile(remote.id, local, accessToken);
+              await this.downloadFile(remote.id, local, getToken);
 
               const freshLocal = new FileSystem.File(local.uri);
               finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
@@ -577,7 +640,7 @@ export const GoogleDriveService = {
           // Local Only (New file): Only if it's NOT in the manifest
           if (!inManifest) {
             onProgress(`Uploading new: ${name}`);
-            const res = await this.uploadFile(local, name, driveFolderId, accessToken);
+            const res = await this.uploadFile(local, name, driveFolderId, getToken);
             finalId = res.id;
 
             const freshLocal = new FileSystem.File(local.uri);
@@ -594,7 +657,7 @@ export const GoogleDriveService = {
             onProgress(`Downloading new: ${name}`);
             // createFile is synchronous in SDK 54
             const targetFile = localDir.createFile(name, remote.mimeType || 'application/octet-stream');
-            await this.downloadFile(remote.id, targetFile, accessToken);
+            await this.downloadFile(remote.id, targetFile, getToken);
 
             const freshLocal = new FileSystem.File(targetFile.uri);
             finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
@@ -629,3 +692,4 @@ export const GoogleDriveService = {
     return driveFolderId;
   },
 };
+
