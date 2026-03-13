@@ -3,12 +3,49 @@ import * as FileSystem from 'expo-file-system';
 const DRIVE_API_URL = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API_URL = 'https://www.googleapis.com/upload/drive/v3/files';
 const MANIFEST_FILENAME = '.sync-manifest.json';
+const IGNORE_FILENAME = '.sinkhole-ignore';
 
 // System/Trash files to ignore
-const IGNORE_LIST = ['.DS_Store', 'thumbs.db', '.trash', MANIFEST_FILENAME];
-const isIgnored = (name: string) => 
-  IGNORE_LIST.includes(name) || name.startsWith('.trashed-');
+const SYSTEM_IGNORE_LIST = ['.DS_Store', 'thumbs.db', '.trash', MANIFEST_FILENAME];
+const isIgnored = (name: string, isDir: boolean, relativePath: string, customIgnoreList: string[] = []) => {
+  if (SYSTEM_IGNORE_LIST.includes(name) || name.startsWith('.trashed-')) return true;
 
+  const fullPath = relativePath ? `${relativePath}/${name}` : name;
+
+  return customIgnoreList.some(pattern => {
+    // 1. Handle directory-only patterns (ending in /)
+    let cleanPattern = pattern;
+    let mustBeDir = false;
+    if (pattern.endsWith('/')) {
+      cleanPattern = pattern.slice(0, -1);
+      mustBeDir = true;
+    }
+
+    if (mustBeDir && !isDir) return false;
+
+    // 2. Exact match on name or fullPath
+    if (name === cleanPattern || fullPath === cleanPattern) return true;
+
+    // 3. Glob support (simple conversion to regex)
+    try {
+      // Escape special regex characters except *
+      let regexSource = cleanPattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*\*/g, '(.+)')             // ** matches anything including /
+        .replace(/\*/g, '([^/]*)');           // * matches anything except /
+
+      // If it doesn't start with /, it can match anywhere (like gitignore)
+      // but we'll try to match it against name or relative path
+      const regex = new RegExp(`^${regexSource}$`);
+      const dirContentRegex = new RegExp(`^${regexSource}/.*`);
+
+      return regex.test(name) || regex.test(fullPath) || dirContentRegex.test(fullPath);
+    } catch (e) {
+      console.warn(`[Sync] Invalid ignore pattern: ${pattern}`, e);
+      return false;
+    }
+  });
+};
 export interface DriveFile {
   id: string;
   name: string;
@@ -19,13 +56,26 @@ export interface DriveFile {
 
 interface ManifestEntry {
   id: string;
-  lastMtime: number;
+  localMtime: number;
+  remoteMtime: number;
   size: number;
   isDir: boolean;
+  /** @deprecated use localMtime and remoteMtime */
+  lastMtime?: number;
 }
 
 interface Manifest {
   files: Record<string, ManifestEntry>;
+}
+
+/**
+ * Custom error for handling session loss.
+ */
+export class UnauthorizedError extends Error {
+  constructor(message = 'Session expired or unauthorized') {
+    super(message);
+    this.name = 'UnauthorizedError';
+  }
 }
 
 /**
@@ -41,10 +91,12 @@ export const GoogleDriveService = {
     if (parentFolderId) {
       query += ` and '${parentFolderId}' in parents`;
     }
-    
+
     const response = await fetch(`${DRIVE_API_URL}?q=${encodeURIComponent(query)}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+
+    if (response.status === 401) throw new UnauthorizedError();
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -76,12 +128,14 @@ export const GoogleDriveService = {
       body: JSON.stringify(metadata),
     });
 
+    if (createResponse.status === 401) throw new UnauthorizedError();
+
     const folder = await createResponse.json();
     if (!createResponse.ok) {
       console.error('[GoogleDrive] Folder Creation Failed:', folder);
       throw new Error(`Failed to create remote folder: ${JSON.stringify(folder)}`);
     }
-    
+
     console.log(`[GoogleDrive] Folder created successfully: ${folder.id}`);
     return folder.id;
   },
@@ -94,6 +148,8 @@ export const GoogleDriveService = {
     const response = await fetch(`${DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id, name, mimeType, size, modifiedTime)`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+
+    if (response.status === 401) throw new UnauthorizedError();
 
     if (!response.ok) {
       const errorData = await response.json();
@@ -117,13 +173,13 @@ export const GoogleDriveService = {
     accessToken: string,
     existingFileId?: string
   ): Promise<any> {
-    if (!localFile.exists) throw new Error(`Local file does not exist: ${localFile.uri}`);
+    if (!localFile.exists) throw new Error(`Local file does not exist: ${decodeURIComponent(localFile.uri)}`);
 
     console.log(`[GoogleDrive] Uploading ${fileName} (${existingFileId ? 'Update' : 'New'})...`);
     // Use modern base64() method
     const fileBase64 = await localFile.base64();
     const metadata: any = { name: fileName };
-    
+
     // CRITICAL: parents field is NOT writable in update (PATCH) requests.
     if (!existingFileId) {
       metadata.parents = [parentFolderId];
@@ -155,6 +211,8 @@ export const GoogleDriveService = {
       body: multipartBody,
     });
 
+    if (response.status === 401) throw new UnauthorizedError();
+
     const result = await response.json();
     if (!response.ok) {
       console.error('[GoogleDrive] Upload Failed:', result);
@@ -169,18 +227,29 @@ export const GoogleDriveService = {
    */
   async downloadFile(fileId: string, targetFile: FileSystem.File, accessToken: string): Promise<void> {
     const url = `${DRIVE_API_URL}/${fileId}?alt=media`;
-    console.log(`[GoogleDrive] Downloading file ID: ${fileId} to ${targetFile.uri}...`);
+    console.log(`[GoogleDrive] Downloading file ID: ${fileId} to ${decodeURIComponent(targetFile.uri)}...`);
     try {
       // Use static downloadFileAsync which is standard in SDK 54
-      await FileSystem.File.downloadFileAsync(url, targetFile, {
+      const result = await FileSystem.File.downloadFileAsync(url, targetFile, {
         headers: { Authorization: `Bearer ${accessToken}` },
         idempotent: true,
       });
-      console.log(`[GoogleDrive] Download successful via downloadFileAsync`);
-    } catch (e) {
+
+      // Checking for 401 status in downloadFileAsync result if available
+      // In some Expo versions, this might throw or return a status.
+      // We also check the fallback.
+    } catch (e: any) {
+      // If we get a 401 here, we throw UnauthorizedError
+      if (e.message?.includes('401') || e.status === 401) {
+        throw new UnauthorizedError();
+      }
+
       console.warn(`[Sync] standard download failed, trying fallback:`, e);
       const response = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      
+      if (response.status === 401) throw new UnauthorizedError();
       if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+      
       const buffer = await response.arrayBuffer();
       // Writing directly to the file instance using synchronous write
       targetFile.write(new Uint8Array(buffer));
@@ -197,6 +266,9 @@ export const GoogleDriveService = {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+
+    if (response.status === 401) throw new UnauthorizedError();
+
     if (!response.ok && response.status !== 404) {
       const error = await response.json();
       console.error('[GoogleDrive] Delete Failed:', error);
@@ -214,7 +286,7 @@ export const GoogleDriveService = {
       // Note: directory.list() is synchronous in SDK 54
       const entries = directory.list();
       const manifestFile = entries.find(e => e.name === MANIFEST_FILENAME);
-      
+
       if (manifestFile instanceof FileSystem.File) {
         // Use modern text() method
         const content = await manifestFile.text();
@@ -235,12 +307,12 @@ export const GoogleDriveService = {
     try {
       const entries = directory.list();
       let manifestFile = entries.find(e => e.name === MANIFEST_FILENAME) as FileSystem.File | undefined;
-      
+
       if (!manifestFile || !(manifestFile instanceof FileSystem.File)) {
         // createFile is synchronous in SDK 54
         manifestFile = directory.createFile(MANIFEST_FILENAME, 'application/json');
       }
-      
+
       manifestFile.write(JSON.stringify(manifest, null, 2));
       console.log(`[Sync] Saved manifest with ${Object.keys(manifest.files).length} entries`);
     } catch (e) {
@@ -256,9 +328,11 @@ export const GoogleDriveService = {
     targetFolderName: string,
     accessToken: string,
     onProgress: (message: string) => void,
-    parentDriveFolderId?: string
+    parentDriveFolderId?: string,
+    customIgnoreList: string[] = [],
+    relativePath: string = ''
   ): Promise<string> {
-    console.log(`[Sync] Starting sync for ${targetFolderName} (local: ${localUri})`);
+    console.log(`[Sync] Starting sync for ${targetFolderName} (local: ${decodeURIComponent(localUri)})`);
     onProgress(`Syncing: ${targetFolderName}`);
 
     // 1. Remote Setup
@@ -269,7 +343,7 @@ export const GoogleDriveService = {
     // 2. Local Setup
     const localDir = new FileSystem.Directory(localUri);
     // SAF NOTE: We assume localDir exists because it was picked by the user or created by parent.
-    
+
     let localEntries: (FileSystem.File | FileSystem.Directory)[] = [];
     try {
       localEntries = localDir.list();
@@ -279,24 +353,106 @@ export const GoogleDriveService = {
     const localMap = new Map(localEntries.map(e => [e.name, e]));
     console.log(`[Sync] ${targetFolderName}: Found ${localEntries.length} local items and ${remoteFiles.length} remote items.`);
 
-    // 3. Manifest Setup
+    let currentIgnoreList = [...customIgnoreList];
+
+    // 3. Root Level: Sync .sinkhole-ignore first and load patterns
+    if (!parentDriveFolderId) {
+      const localIgnore = localMap.get(IGNORE_FILENAME);
+      const remoteIgnore = remoteMap.get(IGNORE_FILENAME);
+
+      console.log(`[Sync] Root directory check for ${IGNORE_FILENAME}. Local: ${!!localIgnore}, Remote: ${!!remoteIgnore}`);
+
+      if (localIgnore || remoteIgnore) {
+        onProgress(`Processing ${IGNORE_FILENAME}...`);
+        try {
+          // Perform a minimal sync for the ignore file itself
+          if (localIgnore instanceof FileSystem.File && remoteIgnore) {
+            const localMtime = (localIgnore.modificationTime || 0) / 1000;
+            const remoteMtime = new Date(remoteIgnore.modifiedTime!).getTime() / 1000;
+            console.log(`[Sync] ${IGNORE_FILENAME} times: Local ${localMtime}, Remote ${remoteMtime}`);
+            if (localMtime > remoteMtime + 2) {
+              console.log(`[Sync] Uploading newer local ${IGNORE_FILENAME}`);
+              await this.uploadFile(localIgnore, IGNORE_FILENAME, driveFolderId, accessToken, remoteIgnore.id);
+            } else if (remoteMtime > localMtime + 2) {
+              console.log(`[Sync] Downloading newer remote ${IGNORE_FILENAME}`);
+              await this.downloadFile(remoteIgnore.id, localIgnore, accessToken);
+            }
+          } else if (localIgnore instanceof FileSystem.File) {
+            console.log(`[Sync] Uploading new local ${IGNORE_FILENAME}`);
+            await this.uploadFile(localIgnore, IGNORE_FILENAME, driveFolderId, accessToken);
+          } else if (remoteIgnore) {
+            console.log(`[Sync] Downloading new remote ${IGNORE_FILENAME}`);
+            const targetFile = localDir.createFile(IGNORE_FILENAME, remoteIgnore.mimeType || 'text/plain');
+            await this.downloadFile(remoteIgnore.id, targetFile, accessToken);
+          }
+
+          // Load patterns from the now-synced local file
+          const freshLocalIgnore = localDir.list().find(e => e.name === IGNORE_FILENAME);
+          if (freshLocalIgnore instanceof FileSystem.File) {
+            const content = await freshLocalIgnore.text();
+            onProgress(`Ignore File Content:\n${content}`); // LOG RAW CONTENT TO UI
+            const patterns = content
+              .split(/\r?\n/)
+              .map(line => line.trim())
+              .filter(line => line.length > 0 && !line.startsWith('#'));
+            currentIgnoreList = [...currentIgnoreList, ...patterns];
+            console.log(`[Sync] Loaded patterns: ${JSON.stringify(currentIgnoreList)}`);
+            onProgress(`Loaded ${patterns.length} ignore patterns`);
+          }
+        } catch (e) {
+          console.warn(`[Sync] Failed to process ${IGNORE_FILENAME}:`, e);
+          onProgress(`Warning: Failed to load ${IGNORE_FILENAME}`);
+        }
+      }
+    }
+
+    // 4. Manifest Setup
     const manifest = await this.loadManifest(localDir);
     const newManifest: Manifest = { files: {} };
 
-    // 4. Combine all names to process (Local + Remote + Manifest)
+    // 5. Combine all names to process (Local + Remote + Manifest)
     const allNames = new Set([...localMap.keys(), ...remoteMap.keys(), ...Object.keys(manifest.files)]);
     console.log(`[Sync] ${targetFolderName}: Total unique names to process: ${allNames.size}`);
 
     for (const name of allNames) {
-      if (isIgnored(name)) continue;
+      // Skip already processed ignore file at root, or any ignored files/folders
+      if (!parentDriveFolderId && name === IGNORE_FILENAME) {
+        // ...
+        // We still want it in the manifest so it's tracked
+        const local = localMap.get(name);
+        const remote = remoteMap.get(name);
+        if (remote) {
+          const mtime = local instanceof FileSystem.File ? (local.modificationTime || 0) / 1000 : 0;
+          newManifest.files[name] = { 
+            id: remote.id, 
+            localMtime: mtime, 
+            remoteMtime: new Date(remote.modifiedTime!).getTime() / 1000, 
+            size: local instanceof FileSystem.File ? local.size || 0 : 0, 
+            isDir: false 
+          };
+        }
+        continue;
+      }
 
       const local = localMap.get(name);
       const remote = remoteMap.get(name);
       const inManifest = manifest.files[name];
 
+      // Pre-calculate common values if they exist
+      const localMtime = (local instanceof FileSystem.File) ? (local.modificationTime || 0) / 1000 : 0;
+      const localSize = (local instanceof FileSystem.File) ? (local.size || 0) : 0;
+      const remoteMtime = remote ? new Date(remote.modifiedTime!).getTime() / 1000 : 0;
+      const remoteSize = remote ? parseInt(remote.size || '0') : 0;
+
+      const isRemoteDir = remote?.mimeType === 'application/vnd.google-apps.folder';
+      const isLocalDir = local instanceof FileSystem.Directory;
+      const isDir = isRemoteDir || isLocalDir;
+
+      if (isIgnored(name, isDir, relativePath, currentIgnoreList)) continue;
+
       try {
         // --- DELETION HANDLING ---
-        
+
         // 1. Local Deletion: Existed in manifest, now missing locally, but still exists on Drive.
         if (inManifest && !local && remote) {
           onProgress(`Deleting remote (local deletion detected): ${name}`);
@@ -318,9 +474,6 @@ export const GoogleDriveService = {
         }
 
         // 4. Type mismatch / Conflict handling (Local exists, Remote exists, but they are different types)
-        const isRemoteDir = remote?.mimeType === 'application/vnd.google-apps.folder';
-        const isLocalDir = local instanceof FileSystem.Directory;
-
         if (local && remote && isLocalDir !== isRemoteDir) {
           onProgress(`Type mismatch conflict for ${name}. Prioritizing Remote.`);
           if (isLocalDir) (local as FileSystem.Directory).delete();
@@ -345,9 +498,11 @@ export const GoogleDriveService = {
               name, 
               accessToken, 
               onProgress, 
-              driveFolderId
+              driveFolderId,
+              currentIgnoreList,
+              relativePath ? `${relativePath}/${name}` : name
             );
-            newManifest.files[name] = { id: subDriveId, lastMtime: 0, size: 0, isDir: true };
+            newManifest.files[name] = { id: subDriveId, localMtime: 0, remoteMtime: 0, size: 0, isDir: true };
             continue;
           }
         }
@@ -357,41 +512,66 @@ export const GoogleDriveService = {
         if (remote?.mimeType.startsWith('application/vnd.google-apps.')) continue;
 
         let finalId = remote?.id;
-        let finalMtime = 0;
+        let finalLocalMtime = 0;
+        let finalRemoteMtime = 0;
         let finalSize = 0;
 
         if (local instanceof FileSystem.File && remote) {
           // Both exist: check for updates
-          const localMtime = (local.modificationTime || 0) / 1000;
-          const remoteMtime = new Date(remote.modifiedTime!).getTime() / 1000;
-          const localSize = local.size || 0;
-          const remoteSize = parseInt(remote.size || '0');
+          // (Using pre-calculated localMtime, remoteMtime, localSize, remoteSize)
 
           // Check if either has changed since last sync (using manifest)
-          const hasLocalChanged = !inManifest || Math.abs(localMtime - inManifest.lastMtime) > 2 || localSize !== inManifest.size;
-          const hasRemoteChanged = !inManifest || Math.abs(remoteMtime - inManifest.lastMtime) > 2 || remoteSize !== inManifest.size;
+          const baseLocalMtime = inManifest?.localMtime ?? inManifest?.lastMtime ?? 0;
+          const baseRemoteMtime = inManifest?.remoteMtime ?? inManifest?.lastMtime ?? 0;
+
+          const hasLocalChanged = !inManifest || Math.abs(localMtime - baseLocalMtime) > 2 || localSize !== inManifest.size;
+          const hasRemoteChanged = !inManifest || Math.abs(remoteMtime - baseRemoteMtime) > 2 || remoteSize !== inManifest.size;
 
           if (hasLocalChanged && !hasRemoteChanged) {
             onProgress(`Uploading update: ${name}`);
             const res = await this.uploadFile(local, name, driveFolderId, accessToken, remote.id);
             finalId = res.id || remote.id;
+
+            // Re-fetch local metadata to get actual modification time after upload (if changed)
+            const freshLocal = new FileSystem.File(local.uri);
+            finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
+            finalRemoteMtime = new Date(res.modifiedTime || remote.modifiedTime!).getTime() / 1000;
+            finalSize = freshLocal.size || 0;
           } else if (hasRemoteChanged && !hasLocalChanged) {
             onProgress(`Downloading update: ${name}`);
             await this.downloadFile(remote.id, local, accessToken);
+
+            // Re-fetch local metadata to get ACTUAL modification time after download
+            const freshLocal = new FileSystem.File(local.uri);
+            finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
+            finalRemoteMtime = remoteMtime;
+            finalSize = freshLocal.size || 0;
           } else if (hasLocalChanged && hasRemoteChanged) {
             // Conflict (LWW)
             if (localMtime > remoteMtime) {
               onProgress(`Conflict (LWW): Uploading local version of ${name}`);
-              await this.uploadFile(local, name, driveFolderId, accessToken, remote.id);
+              const res = await this.uploadFile(local, name, driveFolderId, accessToken, remote.id);
+
+              const freshLocal = new FileSystem.File(local.uri);
+              finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
+              finalRemoteMtime = new Date(res.modifiedTime || remote.modifiedTime!).getTime() / 1000;
+              finalSize = freshLocal.size || 0;
             } else {
               onProgress(`Conflict (LWW): Downloading remote version of ${name}`);
               await this.downloadFile(remote.id, local, accessToken);
+
+              const freshLocal = new FileSystem.File(local.uri);
+              finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
+              finalRemoteMtime = remoteMtime;
+              finalSize = freshLocal.size || 0;
             }
+          } else {
+            // No changes
+            finalId = remote.id;
+            finalLocalMtime = localMtime;
+            finalRemoteMtime = remoteMtime;
+            finalSize = localSize;
           }
-          
-          finalId = remote.id;
-          finalMtime = (local.modificationTime || 0) / 1000;
-          finalSize = local.size || 0;
 
         } else if (local instanceof FileSystem.File) {
           // Local Only (New file): Only if it's NOT in the manifest
@@ -399,8 +579,11 @@ export const GoogleDriveService = {
             onProgress(`Uploading new: ${name}`);
             const res = await this.uploadFile(local, name, driveFolderId, accessToken);
             finalId = res.id;
-            finalMtime = (local.modificationTime || 0) / 1000;
-            finalSize = local.size || 0;
+
+            const freshLocal = new FileSystem.File(local.uri);
+            finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
+            finalRemoteMtime = new Date(res.modifiedTime || new Date().toISOString()).getTime() / 1000;
+            finalSize = freshLocal.size || 0;
           } else {
             // It was in manifest but is missing on Drive. Already handled in deletion logic.
           }
@@ -412,8 +595,11 @@ export const GoogleDriveService = {
             // createFile is synchronous in SDK 54
             const targetFile = localDir.createFile(name, remote.mimeType || 'application/octet-stream');
             await this.downloadFile(remote.id, targetFile, accessToken);
-            finalMtime = (targetFile.modificationTime || 0) / 1000;
-            finalSize = targetFile.size || 0;
+
+            const freshLocal = new FileSystem.File(targetFile.uri);
+            finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
+            finalRemoteMtime = remoteMtime;
+            finalSize = freshLocal.size || 0;
             finalId = remote.id;
           } else {
             // It was in manifest but is missing locally. Already handled in deletion logic.
@@ -421,9 +607,18 @@ export const GoogleDriveService = {
         }
 
         if (finalId) {
-          newManifest.files[name] = { id: finalId, lastMtime: finalMtime, size: finalSize, isDir: false };
+          newManifest.files[name] = { 
+            id: finalId, 
+            localMtime: finalLocalMtime, 
+            remoteMtime: finalRemoteMtime, 
+            size: finalSize, 
+            isDir: false 
+          };
         }
       } catch (err: any) {
+        if (err instanceof UnauthorizedError) {
+          throw err; // Re-throw to stop the entire sync process immediately
+        }
         console.error(`[Sync Error] Failed to sync ${name}:`, err);
         onProgress(`Error: ${name} - ${err.message}`);
         if (inManifest) newManifest.files[name] = inManifest;

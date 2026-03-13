@@ -7,7 +7,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import { StatusBar } from 'expo-status-bar';
-import { GoogleDriveService } from './src/services/googleDrive';
+import { GoogleDriveService, UnauthorizedError } from './src/services/googleDrive';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ScreenOrientation from 'expo-screen-orientation';
 
@@ -289,9 +289,18 @@ export default function App() {
       console.error('[App] Sync Failed Detail:', error);
       if (error.stack) console.error('[App] Sync Error Stack:', error.stack);
 
-      setDebugLog((prev) => `${prev}\n!! Sync Error: ${error.message}`);
-      setSyncStatus('Failed');
-      Alert.alert('Sync Failed', error.message);
+      if (error instanceof UnauthorizedError) {
+        setToken(null);
+        setUserInfo(null);
+        await storage.deleteItem(GOOGLE_TOKEN_KEY);
+        setDebugLog((prev) => `${prev}\n!! Session Lost: Please login again.`);
+        setSyncStatus('Session Expired');
+        Alert.alert('Session Expired', 'Your Google session has expired. Please login again to continue syncing.');
+      } else {
+        setDebugLog((prev) => `${prev}\n!! Sync Error: ${error.message}`);
+        setSyncStatus('Failed');
+        Alert.alert('Sync Failed', error.message);
+      }
     } finally {
       setIsSyncing(false);
     }
