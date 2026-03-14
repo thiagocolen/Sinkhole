@@ -5,6 +5,7 @@ const DRIVE_API_URL = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API_URL = 'https://www.googleapis.com/upload/drive/v3/files';
 const MANIFEST_FILENAME = '.sync-manifest.json';
 const IGNORE_FILENAME = '.sinkhole-ignore';
+const MD5_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50MB
 
 // System/Trash files to ignore
 const SYSTEM_IGNORE_LIST = ['.DS_Store', 'thumbs.db', '.trash'];
