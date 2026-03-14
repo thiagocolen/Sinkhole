@@ -1,12 +1,14 @@
 import * as FileSystem from 'expo-file-system';
+import * as Crypto from 'expo-crypto';
 
 const DRIVE_API_URL = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API_URL = 'https://www.googleapis.com/upload/drive/v3/files';
 const MANIFEST_FILENAME = '.sync-manifest.json';
 const IGNORE_FILENAME = '.sinkhole-ignore';
+const MD5_THRESHOLD_BYTES = 50 * 1024 * 1024; // 50MB
 
 // System/Trash files to ignore
-const SYSTEM_IGNORE_LIST = ['.DS_Store', 'thumbs.db', '.trash', MANIFEST_FILENAME];
+const SYSTEM_IGNORE_LIST = ['.DS_Store', 'thumbs.db', '.trash'];
 const isIgnored = (name: string, isDir: boolean, relativePath: string, customIgnoreList: string[] = []) => {
   if (SYSTEM_IGNORE_LIST.includes(name) || name.startsWith('.trashed-')) return true;
 
@@ -52,6 +54,7 @@ export interface DriveFile {
   mimeType: string;
   size?: string;
   modifiedTime?: string;
+  md5Checksum?: string;
 }
 
 interface ManifestEntry {
@@ -60,13 +63,51 @@ interface ManifestEntry {
   remoteMtime: number;
   size: number;
   isDir: boolean;
+  hash?: string;
+  manifestId?: string;
   /** @deprecated use localMtime and remoteMtime */
   lastMtime?: number;
 }
 
 interface Manifest {
   files: Record<string, ManifestEntry>;
+  md5Checksum?: string;
 }
+
+/**
+ * Calculate the MD5 hash of a local file.
+ */
+const calculateLocalHash = async (file: FileSystem.File): Promise<string> => {
+  try {
+    const hash = await Crypto.digestFileAsync(
+      Crypto.CryptoDigestAlgorithm.MD5,
+      file.uri
+    );
+    return hash;
+  } catch (e) {
+    console.warn(`[Sync] Failed to calculate hash for ${file.uri}:`, e);
+    return '';
+  }
+};
+
+/**
+ * Calculate the top-level MD5 hash for the manifest.
+ */
+const calculateManifestHash = async (manifest: Manifest): Promise<string> => {
+  const fileHashes = Object.keys(manifest.files)
+    .filter(name => name !== MANIFEST_FILENAME)
+    .sort()
+    .map(name => manifest.files[name].hash || '')
+    .filter(h => h !== '');
+  
+  if (fileHashes.length === 0) return '';
+  
+  const combinedHashes = fileHashes.join('');
+  return await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.MD5,
+    combinedHashes
+  );
+};
 
 /**
  * Custom error for handling session loss.
@@ -180,7 +221,7 @@ export const GoogleDriveService = {
     const query = `'${folderId}' in parents and trashed = false`;
 
     do {
-      let url = `${DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id, name, mimeType, size, modifiedTime),nextPageToken&pageSize=1000`;
+      let url = `${DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id, name, mimeType, size, modifiedTime, md5Checksum),nextPageToken&pageSize=1000`;
       if (pageToken) {
         url += `&pageToken=${pageToken}`;
       }
@@ -205,6 +246,17 @@ export const GoogleDriveService = {
 
     console.log(`[GoogleDrive] Found a total of ${allFiles.length} files in remote folder ${folderId}`);
     return allFiles;
+  },
+
+  /**
+   * Get the MD5 checksum of a specific file by ID.
+   */
+  async getFileChecksum(fileId: string, getToken: TokenProvider): Promise<string | undefined> {
+    const url = `${DRIVE_API_URL}/${fileId}?fields=md5Checksum`;
+    const response = await this.fetchWithRetry(url, {}, getToken);
+    if (!response.ok) return undefined;
+    const data = await response.json();
+    return data.md5Checksum;
   },
 
   /**
@@ -356,6 +408,9 @@ export const GoogleDriveService = {
    */
   async saveManifest(directory: FileSystem.Directory, manifest: Manifest): Promise<void> {
     try {
+      // Update top-level hash before saving
+      manifest.md5Checksum = await calculateManifestHash(manifest);
+      
       const entries = directory.list();
       let manifestFile = entries.find(e => e.name === MANIFEST_FILENAME) as FileSystem.File | undefined;
 
@@ -365,7 +420,7 @@ export const GoogleDriveService = {
       }
 
       manifestFile.write(JSON.stringify(manifest, null, 2));
-      console.log(`[Sync] Saved manifest with ${Object.keys(manifest.files).length} entries`);
+      console.log(`[Sync] Saved manifest with ${Object.keys(manifest.files).length} entries. Manifest Hash: ${manifest.md5Checksum}`);
     } catch (e) {
       console.error(`[Sync] Failed to save manifest:`, e);
     }
@@ -549,6 +604,20 @@ export const GoogleDriveService = {
           }
 
           if (subDir) {
+            // FAST COMPARISON OPTIMIZATION
+            if (inManifest?.isDir && inManifest?.hash && inManifest?.manifestId) {
+               const remoteManifestHash = await this.getFileChecksum(inManifest.manifestId, getToken);
+               const localSubManifest = await this.loadManifest(subDir);
+               const localManifestHash = localSubManifest.md5Checksum;
+
+               if (remoteManifestHash === inManifest.hash && localManifestHash === inManifest.hash) {
+                  console.log(`[Sync] Fast-skipping directory: ${currentPath}`);
+                  onProgress(`Skipping (no changes): ${name}`);
+                  newManifest.files[name] = inManifest;
+                  continue;
+               }
+            }
+
             console.log(`[Sync] Recursing into directory: '${currentPath}'`);
             const subDriveId = await this.syncDirectory(
               subDir.uri, 
@@ -560,7 +629,20 @@ export const GoogleDriveService = {
               relativePath ? `${relativePath}/${name}` : name,
               remote?.id
             );
-            newManifest.files[name] = { id: subDriveId, localMtime: 0, remoteMtime: 0, size: 0, isDir: true };
+
+            // After sync, reload manifest to get its hash and ID
+            const updatedSubManifest = await this.loadManifest(subDir);
+            const remoteManifestFile = updatedSubManifest.files[MANIFEST_FILENAME];
+
+            newManifest.files[name] = { 
+              id: subDriveId, 
+              localMtime: 0, 
+              remoteMtime: 0, 
+              size: 0, 
+              isDir: true,
+              hash: updatedSubManifest.md5Checksum,
+              manifestId: remoteManifestFile?.id
+            };
             continue;
           } else if (isRemoteDir) {
              // Fallback if local directory creation failed for some reason, but we have a remote ID
@@ -578,6 +660,7 @@ export const GoogleDriveService = {
         let finalLocalMtime = 0;
         let finalRemoteMtime = 0;
         let finalSize = 0;
+        let finalHash = inManifest?.hash;
 
         if (local instanceof FileSystem.File && remote) {
           // Both exist: check for updates
@@ -587,13 +670,33 @@ export const GoogleDriveService = {
           const baseLocalMtime = inManifest?.localMtime ?? inManifest?.lastMtime ?? 0;
           const baseRemoteMtime = inManifest?.remoteMtime ?? inManifest?.lastMtime ?? 0;
 
-          const hasLocalChanged = !inManifest || Math.abs(localMtime - baseLocalMtime) > 2 || localSize !== inManifest.size;
-          const hasRemoteChanged = !inManifest || Math.abs(remoteMtime - baseRemoteMtime) > 2 || remoteSize !== inManifest.size;
+          let hasLocalChanged = !inManifest || Math.abs(localMtime - baseLocalMtime) > 2 || localSize !== inManifest.size;
+          let hasRemoteChanged = !inManifest || Math.abs(remoteMtime - baseRemoteMtime) > 2 || remoteSize !== inManifest.size;
+
+          // CONTENT HASHING OPTIMIZATION
+          if (hasLocalChanged || hasRemoteChanged) {
+            // If size matches but timestamp changed, verify with hash
+            if (localSize === remoteSize) {
+              const localHash = await calculateLocalHash(local);
+              const remoteHash = remote.md5Checksum;
+
+              // If content matches, we don't need to transfer
+              if (localHash === remoteHash) {
+                console.log(`[Sync] Content match for ${name} (Hash: ${localHash}). Skipping transfer.`);
+                hasLocalChanged = false;
+                hasRemoteChanged = false;
+                finalHash = localHash;
+              } else {
+                finalHash = localHash;
+              }
+            }
+          }
 
           if (hasLocalChanged && !hasRemoteChanged) {
             onProgress(`Uploading update: ${name}`);
             const res = await this.uploadFile(local, name, driveFolderId, getToken, remote.id);
             finalId = res.id || remote.id;
+            finalHash = res.md5Checksum || await calculateLocalHash(local);
 
             // Re-fetch local metadata to get actual modification time after upload (if changed)
             const freshLocal = new FileSystem.File(local.uri);
@@ -609,6 +712,7 @@ export const GoogleDriveService = {
             finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
             finalRemoteMtime = remoteMtime;
             finalSize = freshLocal.size || 0;
+            finalHash = remote.md5Checksum;
           } else if (hasLocalChanged && hasRemoteChanged) {
             // Conflict (LWW)
             if (localMtime > remoteMtime) {
@@ -619,6 +723,7 @@ export const GoogleDriveService = {
               finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
               finalRemoteMtime = new Date(res.modifiedTime || remote.modifiedTime!).getTime() / 1000;
               finalSize = freshLocal.size || 0;
+              finalHash = res.md5Checksum || await calculateLocalHash(local);
             } else {
               onProgress(`Conflict (LWW): Downloading remote version of ${name}`);
               await this.downloadFile(remote.id, local, getToken);
@@ -627,6 +732,7 @@ export const GoogleDriveService = {
               finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
               finalRemoteMtime = remoteMtime;
               finalSize = freshLocal.size || 0;
+              finalHash = remote.md5Checksum;
             }
           } else {
             // No changes
@@ -634,6 +740,7 @@ export const GoogleDriveService = {
             finalLocalMtime = localMtime;
             finalRemoteMtime = remoteMtime;
             finalSize = localSize;
+            if (!finalHash) finalHash = remote.md5Checksum || await calculateLocalHash(local);
           }
 
         } else if (local instanceof FileSystem.File) {
@@ -642,6 +749,7 @@ export const GoogleDriveService = {
             onProgress(`Uploading new: ${name}`);
             const res = await this.uploadFile(local, name, driveFolderId, getToken);
             finalId = res.id;
+            finalHash = res.md5Checksum || await calculateLocalHash(local);
 
             const freshLocal = new FileSystem.File(local.uri);
             finalLocalMtime = (freshLocal.modificationTime || 0) / 1000;
@@ -664,6 +772,7 @@ export const GoogleDriveService = {
             finalRemoteMtime = remoteMtime;
             finalSize = freshLocal.size || 0;
             finalId = remote.id;
+            finalHash = remote.md5Checksum;
           } else {
             // It was in manifest but is missing locally. Already handled in deletion logic.
           }
@@ -675,7 +784,8 @@ export const GoogleDriveService = {
             localMtime: finalLocalMtime, 
             remoteMtime: finalRemoteMtime, 
             size: finalSize, 
-            isDir: false 
+            isDir: false,
+            hash: finalHash
           };
         }
       } catch (err: any) {
