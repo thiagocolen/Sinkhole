@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { StyleSheet, Text, View, Button, ScrollView, Alert, TextInput, Platform, ActivityIndicator, TouchableOpacity, useWindowDimensions, useColorScheme, Image, Linking, AppState } from 'react-native';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { StyleSheet, Text, View, Button, ScrollView, Alert, TextInput, Platform, ActivityIndicator, TouchableOpacity, useWindowDimensions, useColorScheme, Image, Linking, AppState, Animated, Easing } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import * as SecureStore from 'expo-secure-store';
@@ -88,6 +88,14 @@ const StatusIndicator = ({ isAuthenticated, onPress, theme }: { isAuthenticated:
   </TouchableOpacity>
 );
 
+const formatPath = (uri: string | null) => {
+  if (!uri) return 'No folder selected';
+  const decoded = decodeURIComponent(uri);
+  const parts = decoded.split('/');
+  if (parts.length <= 2) return decoded;
+  return `.../${parts.slice(-2).join('/')}`;
+};
+
 export default function App() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
@@ -101,6 +109,29 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [debugLog, setDebugLog] = useState<string>('');
   const [themeMode, setThemeMode] = useState<ThemeMode>('system');
+
+  const rotationValue = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isSyncing) {
+      Animated.loop(
+        Animated.timing(rotationValue, {
+          toValue: 1,
+          duration: 1500,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      ).start();
+    } else {
+      rotationValue.stopAnimation();
+      rotationValue.setValue(0);
+    }
+  }, [isSyncing]);
+
+  const rotation = rotationValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
 
   const theme = useMemo(() => {
     if (themeMode === 'system') {
@@ -316,16 +347,19 @@ export default function App() {
 
   const mainContent = (
     <>
-      <View style={[styles.section, { backgroundColor: theme.card, width: isLandscape ? '48.5%' : '100%' }]}>
+      <TouchableOpacity 
+        style={[styles.section, { backgroundColor: theme.card, width: isLandscape ? '48.5%' : '100%' }]}
+        onPress={pickFolder}
+        activeOpacity={0.7}
+      >
         <View style={styles.sectionTitleContainer}>
           <MaterialCommunityIcons name="folder-outline" size={24} color={theme.accent} style={styles.sectionIcon} />
           <Text style={[styles.label, { color: theme.text }]}>Local Folder</Text>
         </View>
         <Text style={[styles.info, { color: theme.subText }]} numberOfLines={1} ellipsizeMode="middle">
-          {folderUri || 'No folder selected'}
+          {formatPath(folderUri)}
         </Text>
-        <Button title="Select Folder" onPress={pickFolder} color={theme.accent} />
-      </View>
+      </TouchableOpacity>
 
       {!HIDE_CONFIG && (
         <View style={[styles.section, { backgroundColor: theme.card, width: isLandscape ? '48.5%' : '100%' }]}>
@@ -345,23 +379,20 @@ export default function App() {
         </View>
       )}
 
-      <View style={[styles.section, { backgroundColor: theme.card, width: isLandscape ? '48.5%' : '100%' }]}>
+      <TouchableOpacity 
+        style={[styles.section, { backgroundColor: theme.card, width: isLandscape ? '48.5%' : '100%', opacity: (!token || !folderUri) ? 0.5 : 1 }]}
+        onPress={handleSync}
+        disabled={!token || !folderUri || isSyncing}
+        activeOpacity={0.7}
+      >
         <View style={styles.sectionTitleContainer}>
-          <MaterialCommunityIcons name="sync" size={24} color={theme.accent} style={styles.sectionIcon} />
+          <Animated.View style={{ transform: [{ rotate: rotation }] }}>
+            <MaterialCommunityIcons name="sync" size={24} color={theme.accent} style={styles.sectionIcon} />
+          </Animated.View>
           <Text style={[styles.label, { color: theme.text }]}>Sync Folders</Text>
         </View>
         <Text style={[styles.info, { color: theme.subText }]}>Status: {syncStatus}</Text>
-        {isSyncing ? (
-          <ActivityIndicator size="large" color={theme.accent} />
-        ) : (
-          <Button
-            title="Sync Now"
-            onPress={handleSync}
-            color={theme.accent}
-            disabled={!token || !folderUri}
-          />
-        )}
-      </View>
+      </TouchableOpacity>
     </>
   );
 
@@ -426,9 +457,9 @@ export default function App() {
           <MaterialCommunityIcons name="console" size={24} color="#a0ffa0" style={styles.sectionIcon} />
           <Text style={[styles.label, { color: '#fff' }]}>Logs</Text>
         </View>
-        <ScrollView style={styles.debugScroll} nestedScrollEnabled={true}>
+        <View style={{ marginBottom: 15 }}>
           <Text style={[styles.debugText, { color: theme.debugText }]}>{debugLog || 'No logs yet...'}</Text>
-        </ScrollView>
+        </View>
         <Button title="Clear Logs" onPress={() => setDebugLog('')} color={theme.buttonSecondary} />
       </View>
     </ScrollView>
@@ -457,6 +488,5 @@ const styles = StyleSheet.create({
   info: { fontSize: 14, marginBottom: 12 },
   input: { borderRadius: 10, padding: 12, fontSize: 16, borderWidth: 1 },
   debugSection: { padding: 15, borderRadius: 15, marginTop: 10, marginBottom: 40 },
-  debugScroll: { minHeight: 120, maxHeight: 300, marginBottom: 15 },
   debugText: { fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
 });
