@@ -356,7 +356,7 @@ export default function App() {
           <MaterialCommunityIcons name="folder-outline" size={24} color={theme.accent} style={styles.sectionIcon} />
           <Text style={[styles.label, { color: theme.text }]}>Local Folder</Text>
         </View>
-        <Text style={[styles.info, { color: theme.subText }]} numberOfLines={1} ellipsizeMode="middle">
+        <Text style={[styles.info, { color: theme.subText }]} numberOfLines={2} ellipsizeMode="tail">
           {formatPath(folderUri)}
         </Text>
       </TouchableOpacity>
@@ -386,12 +386,14 @@ export default function App() {
         activeOpacity={0.7}
       >
         <View style={styles.sectionTitleContainer}>
-          <Animated.View style={{ transform: [{ rotate: rotation }] }}>
-            <MaterialCommunityIcons name="sync" size={24} color={theme.accent} style={styles.sectionIcon} />
+          <Animated.View style={[{ transform: [{ rotate: rotation }] }, styles.sectionIcon]}>
+            <MaterialCommunityIcons name="sync" size={24} color={theme.accent} />
           </Animated.View>
           <Text style={[styles.label, { color: theme.text }]}>Sync Folders</Text>
         </View>
-        <Text style={[styles.info, { color: theme.subText }]}>Status: {syncStatus}</Text>
+        <Text style={[styles.info, { color: theme.subText }]} numberOfLines={2} ellipsizeMode="tail">
+          Status: {syncStatus}
+        </Text>
       </TouchableOpacity>
     </>
   );
@@ -480,7 +482,7 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 13, fontWeight: '600' },
   portraitStack: { width: '100%' },
   landscapeGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  section: { padding: 18, borderRadius: 15, marginBottom: 20, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
+  section: { padding: 18, borderRadius: 15, marginBottom: 20, elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, height: 120 },
   sectionTitleContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   sectionIcon: { marginRight: 8 },
   label: { fontSize: 18, fontWeight: '700' },
