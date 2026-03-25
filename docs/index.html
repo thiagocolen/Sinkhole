@@ -93,6 +93,15 @@
             clip-path: polygon(0 0, 100% 0, 100% 85%, 0 100%);
         }
 
+        .hero img.large-logo {
+            width: 200px;
+            height: 200px;
+            border-radius: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            margin-bottom: 2rem;
+            border: 5px solid rgba(255,255,255,0.2);
+        }
+
         .hero h2 {
             font-size: 3.5rem;
             font-weight: 800;
@@ -183,77 +192,24 @@
             border-radius: 12px;
             background-color: var(--bg-light);
             border: 1px solid rgba(0,0,0,0.05);
+            text-decoration: none;
+            color: inherit;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: block;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
         }
 
         .card h3 {
             margin-top: 0;
             color: var(--primary);
             font-size: 1.1rem;
-        }
-
-        pre {
-            background-color: var(--code-bg);
-            color: var(--code-text);
-            padding: 1.5rem;
-            border-radius: 8px;
-            overflow-x: auto;
-            font-family: 'Fira Code', monospace;
-            font-size: 0.85rem;
-            line-height: 1.5;
-            margin: 1.5rem 0;
-            border-left: 4px solid var(--primary);
-        }
-
-        .step-list {
-            list-style: none;
-            padding: 0;
-        }
-
-        .step-list li {
-            display: flex;
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .step-number {
-            flex-shrink: 0;
-            width: 2.5rem;
-            height: 2.5rem;
-            background-color: var(--primary);
-            color: var(--white);
-            border-radius: 50%;
             display: flex;
             align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            box-shadow: 0 4px 6px rgba(46, 125, 50, 0.3);
-        }
-
-        .step-content h3 {
-            margin: 0 0 0.5rem;
-            font-size: 1.1rem;
-            color: var(--text-main);
-        }
-
-        .step-content p {
-            margin: 0;
-            color: var(--text-secondary);
-            font-size: 0.95rem;
-        }
-
-        .tech-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.4rem;
-            padding: 0.25rem 0.75rem;
-            background-color: var(--bg-light);
-            border: 1px solid rgba(0,0,0,0.1);
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: var(--primary-dark);
-            margin-right: 0.5rem;
-            margin-bottom: 0.5rem;
+            gap: 0.5rem;
         }
 
         footer {
@@ -262,11 +218,6 @@
             color: var(--text-secondary);
             font-size: 0.9rem;
             border-top: 1px solid rgba(0,0,0,0.05);
-        }
-
-        .highlight {
-            color: var(--primary);
-            font-weight: 600;
         }
 
         @media (max-width: 768px) {
@@ -278,7 +229,7 @@
                 margin-top: 1rem;
             }
             nav a {
-                margin: 0 0.5rem;
+                margin: 0.5rem;
             }
             .hero {
                 padding: 4rem 5% 6rem;
@@ -295,118 +246,56 @@
 <body>
     <header>
         <div class="logo-container">
-            <img src="../assets/icon.png" alt="Sinkhole Logo">
+            <img src="./assets/logo.png" alt="Sinkhole Logo">
             <h1>SINKHOLE</h1>
         </div>
         <nav>
-            <a href="#features"><i class="fas fa-star"></i> Features</a>
-            <a href="#technical"><i class="fas fa-code"></i> Technical</a>
-            <a href="#setup"><i class="fas fa-rocket"></i> Setup</a>
+            <a href="features.html"><i class="fas fa-star"></i> Features</a>
+            <a href="technical.html"><i class="fas fa-code"></i> Technical</a>
+            <a href="guide.html"><i class="fas fa-book"></i> User Guide</a>
+            <a href="setup.html"><i class="fas fa-key"></i> API Setup</a>
+            <a href="developer.html"><i class="fas fa-terminal"></i> Dev Guide</a>
         </nav>
     </header>
 
     <div class="hero">
+        <img src="./assets/logo.png" alt="Sinkhole Logo" class="large-logo">
         <h2>Your Data, Your Bridge.</h2>
-        <p>A secure, manifest-based synchronization engine connecting Android's local storage with Google Drive. Zero friction, total ownership.</p>
+        <p>A secure, manifest-based synchronization engine connecting Android's local storage with Google Drive. Built for privacy, speed, and total ownership.</p>
         <div class="btn-group">
-            <a href="https://github.com/thiagocolen/Sinkhole" class="btn btn-white"><i class="fab fa-github"></i> Repository</a>
-            <a href="#setup" class="btn btn-outline">Getting Started</a>
+            <a href="guide.html" class="btn btn-white"><i class="fas fa-rocket"></i> Get Started</a>
+            <a href="https://github.com/thiagocolen/Sinkhole" class="btn btn-outline"><i class="fab fa-github"></i> Repository</a>
         </div>
     </div>
 
     <div class="container">
-        <section id="features">
-            <h2><i class="fas fa-shield-alt"></i> Why Sinkhole?</h2>
-            <p>Sinkhole was engineered to solve the "last mile" problem of mobile data synchronization. It leverages native Android security primitives to ensure your files remain yours.</p>
+        <section id="welcome">
+            <h2><i class="fas fa-info-circle"></i> Welcome to Sinkhole</h2>
+            <p><strong>Sinkhole</strong> represents a one-way path that everything eventually falls into—in this case, your data securely landing in your private cloud storage. It bridges the gap between your Android device and Google Drive, focusing on a "local-first" approach.</p>
             
             <div class="grid">
-                <div class="card">
-                    <h3><i class="fas fa-fingerprint"></i> SAF Integration</h3>
-                    <p>Uses the <strong>Storage Access Framework</strong> (SAF) to request granular folder permissions. No full disk access required.</p>
-                </div>
-                <div class="card">
-                    <h3><i class="fas fa-sync"></i> Manifest Tracking</h3>
-                    <p>Intelligent change detection using a local <code>.sync-manifest.json</code>. Syncs only what changed, saving battery and data.</p>
-                </div>
-                <div class="card">
-                    <h3><i class="fas fa-lock"></i> OAuth 2.0</h3>
-                    <p>Secure authentication directly with Google. Your credentials never touch our code; we only use temporary access tokens.</p>
-                </div>
-            </div>
-        </section>
-
-        <section id="technical">
-            <h2><i class="fas fa-cogs"></i> Technical Internals</h2>
-            <p>Sinkhole operates on a <span class="highlight">Last Write Wins (LWW)</span> conflict resolution strategy. Every sync operation follows a rigorous verification pipeline.</p>
-            
-            <h3>Manifest Schema</h3>
-            <p>The manifest tracks both local and remote states to detect modifications, deletions, and collisions without re-downloading content.</p>
-            <pre>{
-  "files": {
-    "notes/ideas.md": {
-      "id": "drive_file_id_123",
-      "localMtime": 1711396800000,
-      "remoteMtime": 1711396810000,
-      "size": 1024,
-      "hash": "d41d8cd98f00b204e9800998ecf8427e"
-    }
-  }
-}</pre>
-
-            <h3>Intelligent Ignoring</h3>
-            <p>Supports <code>.sinkhole-ignore</code> files with glob pattern matching, similar to <code>.gitignore</code>. System files like <code>.DS_Store</code> are ignored by default.</p>
-            <pre>// Example ignore logic in TypeScript
-const isIgnored = (name, isDir, relativePath, customPatterns) => {
-  if (SYSTEM_IGNORE_LIST.includes(name)) return true;
-  return customPatterns.some(pattern => matchGlob(name, pattern));
-};</pre>
-            
-            <div>
-                <span class="tech-pill"><i class="fab fa-react"></i> React Native</span>
-                <span class="tech-pill"><i class="fas fa-bolt"></i> Expo</span>
-                <span class="tech-pill"><i class="fab fa-google"></i> Drive API v3</span>
-                <span class="tech-pill"><i class="fas fa-microchip"></i> TypeScript</span>
-            </div>
-        </section>
-
-        <section id="setup">
-            <h2><i class="fas fa-terminal"></i> Getting Started</h2>
-            <div class="step-list">
-                <li>
-                    <div class="step-number">1</div>
-                    <div class="step-content">
-                        <h3>Environment Prep</h3>
-                        <p>Enable <strong>Unknown Sources</strong> in your Android settings and install the latest APK from the releases page.</p>
-                    </div>
-                </li>
-                <li>
-                    <div class="step-number">2</div>
-                    <div class="step-content">
-                        <h3>Vault Selection</h3>
-                        <p>Select your local directory (e.g., your Obsidian Vault). Sinkhole will generate the initial manifest.</p>
-                    </div>
-                </li>
-                <li>
-                    <div class="step-number">3</div>
-                    <div class="step-content">
-                        <h3>Cloud Pairing</h3>
-                        <p>Authorize the app via the Google Sign-In prompt. A dedicated <code>SinkholeFolder</code> will be created in your Drive.</p>
-                    </div>
-                </li>
-                <li>
-                    <div class="step-number">4</div>
-                    <div class="step-content">
-                        <h3>Continuous Sync</h3>
-                        <p>Run the sync manually or check the logs for detailed transfer metrics. Your data is now bridged!</p>
-                    </div>
-                </li>
+                <a href="features.html" class="card">
+                    <h3><i class="fas fa-gem"></i> Obsidian Sync Alternative</h3>
+                    <p>Learn how to use Sinkhole as a free, secure alternative to Obsidian Sync for your Android vaults.</p>
+                </a>
+                <a href="technical.html" class="card">
+                    <h3><i class="fas fa-microchip"></i> How It Works</h3>
+                    <p>Explore the Storage Access Framework, two-way sync, and manifest tracking internals.</p>
+                </a>
+                <a href="guide.html" class="card">
+                    <h3><i class="fas fa-user-check"></i> User Guide</h3>
+                    <p>Follow our step-by-step guide to installing and setting up the app on your device.</p>
+                </a>
+                <a href="setup.html" class="card">
+                    <h3><i class="fas fa-tools"></i> API Configuration</h3>
+                    <p>Instructions for generating your own Google Drive and API credentials for your private build.</p>
+                </a>
             </div>
         </section>
     </div>
 
     <footer>
         <p>&copy; 2026 Thiago Colen &bull; Built with <i class="fas fa-heart" style="color: #e25555;"></i> for the Open Source Community.</p>
-        <p style="font-size: 0.75rem; opacity: 0.6; margin-top: 1rem;">All trademarks belong to their respective owners.</p>
     </footer>
 </body>
 </html>

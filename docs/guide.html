@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Guide | Sinkhole</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .step-list {
+            list-style: none;
+            padding: 0;
+            margin-top: 2rem;
+        }
+
+        .step-list li {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+            background-color: var(--bg-light);
+            padding: 2rem;
+            border-radius: 12px;
+            border: 1px solid rgba(0,0,0,0.05);
+        }
+
+        .step-number {
+            flex-shrink: 0;
+            width: 3rem;
+            height: 3rem;
+            background-color: var(--primary);
+            color: var(--white);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.25rem;
+            box-shadow: 0 4px 6px rgba(46, 125, 50, 0.3);
+        }
+
+        .step-content h3 {
+            margin: 0 0 0.5rem;
+            font-size: 1.25rem;
+            color: var(--primary-dark);
+        }
+
+        .step-content p {
+            margin: 0;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="index.html" class="logo-container">
+            <img src="./assets/logo.png" alt="Sinkhole Logo">
+            <h1>SINKHOLE</h1>
+        </a>
+        <nav>
+            <a href="features.html"><i class="fas fa-star"></i> Features</a>
+            <a href="technical.html"><i class="fas fa-code"></i> Technical</a>
+            <a href="guide.html" class="active"><i class="fas fa-book"></i> User Guide</a>
+            <a href="setup.html"><i class="fas fa-key"></i> API Setup</a>
+            <a href="developer.html"><i class="fas fa-terminal"></i> Dev Guide</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <section>
+            <h2><i class="fas fa-book"></i> Getting Started</h2>
+            <p>Ready to bridge your data? Follow this comprehensive user guide to get Sinkhole up and running on your Android device.</p>
+            
+            <ul class="step-list">
+                <li>
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Installation</h3>
+                        <p>Download and install the Sinkhole APK from our releases page. You may need to enable "Unknown Sources" in your device settings to complete the installation.</p>
+                    </div>
+                </li>
+                <li>
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Launch and Permissions</h3>
+                        <p>Open the app and grant the initial folder permission. Choose the specific folder on your device that you wish to synchronize (e.g., your Obsidian vault).</p>
+                    </div>
+                </li>
+                <li>
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Google Authentication</h3>
+                        <p>Authenticate with your Google account. A dedicated folder called <code>SinkholeFolder</code> will be automatically created in your Google Drive.</p>
+                    </div>
+                </li>
+                <li>
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>Perform Initial Sync</h3>
+                        <p>Click the <strong>SYNC NOW</strong> button. Sinkhole will analyze your folder, generate a local manifest, and upload your files to the cloud.</p>
+                    </div>
+                </li>
+                <li>
+                    <div class="step-number">5</div>
+                    <div class="step-content">
+                        <h3>Verify in the Cloud</h3>
+                        <p>Open your Google Drive on any device to verify that your files have been successfully uploaded and are ready for cross-platform access.</p>
+                    </div>
+                </li>
+            </ul>
+
+            <div style="margin-top: 3rem; padding: 2rem; background-color: #fff9c4; border-radius: 12px; border: 1px solid #fbc02d;">
+                <h3 style="margin-top: 0; color: #f57f17;"><i class="fas fa-lightbulb"></i> Pro Tip</h3>
+                <p style="margin-bottom: 0;">Once your data is on Google Drive, use the **Google Drive Desktop** application to mount your drive as a local disk. You can then point your desktop applications (like Obsidian) to the `SinkholeFolder` for a complete sync cycle!</p>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Thiago Colen &bull; Built with <i class="fas fa-heart" style="color: #e25555;"></i> for the Open Source Community.</p>
+    </footer>
+</body>
+</html>
