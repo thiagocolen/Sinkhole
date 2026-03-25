@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sinkhole - Secure Sync Bridge for Android & Google Drive</title>
+    <style>
+        :root {
+            --primary: #5c6bc0;
+            --primary-light: #8e99f3;
+            --primary-dark: #26418f;
+            --text-main: #333;
+            --text-secondary: #666;
+            --bg-light: #f5f7fa;
+            --white: #ffffff;
+            --shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            color: var(--text-main);
+            line-height: 1.6;
+            background-color: var(--bg-light);
+        }
+
+        header {
+            background-color: var(--white);
+            padding: 1rem 10%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: var(--shadow);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-container img {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+        }
+
+        .logo-container h1 {
+            font-size: 1.5rem;
+            margin: 0;
+            color: var(--primary-dark);
+        }
+
+        nav a {
+            text-decoration: none;
+            color: var(--text-main);
+            font-weight: 500;
+            margin-left: 2rem;
+            transition: color 0.3s;
+        }
+
+        nav a:hover {
+            color: var(--primary);
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem 10%;
+        }
+
+        .hero {
+            text-align: center;
+            padding: 4rem 0;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: var(--white);
+        }
+
+        .hero h2 {
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            max-width: 600px;
+            margin: 0 auto 2rem;
+            opacity: 0.9;
+        }
+
+        .hero .btn {
+            background-color: var(--white);
+            color: var(--primary-dark);
+            padding: 0.8rem 2rem;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: bold;
+            display: inline-block;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .hero .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+        }
+
+        section {
+            background-color: var(--white);
+            padding: 3rem;
+            margin: 2rem 0;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+        }
+
+        h2 {
+            color: var(--primary-dark);
+            border-bottom: 2px solid var(--bg-light);
+            padding-bottom: 1rem;
+            margin-top: 0;
+        }
+
+        .step-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .step-list li {
+            position: relative;
+            padding-left: 3rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .step-list li::before {
+            content: counter(step-counter);
+            counter-increment: step-counter;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 2rem;
+            height: 2rem;
+            background-color: var(--primary);
+            color: var(--white);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .step-list {
+            counter-reset: step-counter;
+        }
+
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.8rem;
+            background-color: var(--bg-light);
+            border-radius: 20px;
+            font-size: 0.8rem;
+            margin-top: 0.5rem;
+        }
+
+        @media (max-width: 600px) {
+            header {
+                flex-direction: column;
+                padding: 1rem;
+            }
+            nav {
+                margin-top: 1rem;
+            }
+            nav a {
+                margin: 0 0.5rem;
+            }
+            .hero h2 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo-container">
+            <img src="../assets/icon.png" alt="Sinkhole Logo">
+            <h1>Sinkhole</h1>
+        </div>
+        <nav>
+            <a href="#about">About</a>
+            <a href="#obsidian">Obsidian</a>
+            <a href="#setup">Setup</a>
+        </nav>
+    </header>
+
+    <div class="hero">
+        <h2>Your Personal Data Bridge</h2>
+        <p>A lightweight, secure sync bridge between Android and Google Drive. Own your data, without the cost.</p>
+        <a href="https://github.com/thiagocolen/Sinkhole" class="btn">View on GitHub</a>
+    </div>
+
+    <div class="container">
+        <section id="about">
+            <h2>What is Sinkhole?</h2>
+            <p>Sinkhole is an open-source Android application designed to provide a seamless and secure synchronization bridge between your local device storage and Google Drive. It was built for users who want total control over their data without relying on proprietary third-party sync services.</p>
+            <p>Whether you're managing personal documents, backup files, or an entire digital knowledge base, Sinkhole ensures your data is always mirrored and accessible across all your devices.</p>
+        </section>
+
+        <section id="obsidian">
+            <h2>The Obsidian Use Case</h2>
+            <p>Many users love <strong>Obsidian</strong> for their personal knowledge management, but syncing your vault between Android and Desktop can be challenging without paying for the premium Obsidian Sync service.</p>
+            <p>Sinkhole serves as the perfect, free alternative to Obsidian Sync:</p>
+            <ul>
+                <li><strong>Android Integration</strong>: Use Sinkhole to mirror your local vault folder on Android to a folder on Google Drive.</li>
+                <li><strong>SAF Permission</strong>: Uses Android's Storage Access Framework for secure, granular access to your vault directory.</li>
+                <li><strong>Desktop Sync</strong>: Access your Google Drive vault from your computer using the official Google Drive desktop app.</li>
+                <li><strong>Unified Vault</strong>: Experience a single, unified vault across mobile and desktop for free.</li>
+            </ul>
+        </section>
+
+        <section id="setup">
+            <h2>Step-by-Step Guide</h2>
+            <ol class="step-list">
+                <li><strong>Install the APK</strong>: Download the latest release from GitHub and install it on your Android device.</li>
+                <li><strong>Select a local folder</strong>: Open the app and select the folder you want to sync (e.g., your Obsidian vault). The app will request SAF permission.</li>
+                <li><strong>Authenticate with Google</strong>: Securely log in using your Google account via OAuth 2.0.</li>
+                <li><strong>Perform initial sync</strong>: Trigger the first synchronization. Sinkhole will identify changes using its manifest-based tracking system.</li>
+                <li><strong>Access on Desktop</strong>: Install Google Drive for Desktop on your computer. Your synced files will now be available locally for use with Obsidian or any other tool.</li>
+            </ol>
+            <div class="badge">Last Write Wins (LWW) conflict resolution strategy implemented</div>
+        </section>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Thiago Colen. Created with Sinkhole.</p>
+    </footer>
+</body>
+</html>
