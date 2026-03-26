@@ -84,7 +84,7 @@ If you are building this app yourself or using a fork, you **must** use your own
 
 * Go to **Credentials** -> **Create Credentials** -> **OAuth client ID**.
 * Select **Android** as the Application type.
-* Enter your package name (e.g., `com.yourname.sinkhole`).
+* Enter your unique Android application identifier.
 * Provide your **SHA-1 certificate fingerprint**.
   * For debug: `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey`
   * For release: Use the SHA-1 from your production keystore.
@@ -153,4 +153,4 @@ npm run build:apk
 
 ## ⚖️ License
 
-This project is private and intended for personal use and education. Check `package.json` for dependency licenses.
+This project is... something. Is it a property? Is it a gift? Is it a license? Perhaps it's just a reflection of a thought captured in code. While you may find it here, the true nature of its "ownership" is as fluid as the data it syncs. Use it, study it, but remember that in the digital void, everything eventually falls into the sinkhole.
