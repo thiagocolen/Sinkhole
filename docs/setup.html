@@ -1,19 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API Setup | Sinkhole</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" type="image/png" href="./assets/favicon.png">
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <header>
         <a href="index.html" class="logo-container">
-            <img src="./assets/logo.png" alt="Sinkhole Logo">
+            <img src="./assets/nav-logo.png" alt="Sinkhole Logo">
             <h1>SINKHOLE</h1>
         </a>
         <nav>
@@ -28,10 +33,13 @@
     <div class="container">
         <section>
             <h2><i class="fas fa-key"></i> Personal API Configuration</h2>
-            <p>If you are building Sinkhole yourself or using a fork, you **must** use your own Google Drive and Google API credentials. This section provides a step-by-step guide to configuring your personal cloud project.</p>
-            
+            <p>If you are building Sinkhole yourself or using a fork, you **must** use your own Google Drive and Google
+                API credentials. This section provides a step-by-step guide to configuring your personal cloud project.
+            </p>
+
             <h3>1. Create a Google Cloud Project</h3>
-            <p>Go to the <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a> and create a new project (e.g., "My Sinkhole Project").</p>
+            <p>Go to the <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a> and create
+                a new project (e.g., "My Sinkhole Project").</p>
 
             <h3>2. Enable Google Drive API</h3>
             <p>In the Library section of your project, search for **Google Drive API** and click **Enable**.</p>
@@ -39,13 +47,15 @@
             <h3>3. Configure OAuth Consent Screen</h3>
             <ul>
                 <li>Set the User Type to <strong>External</strong>.</li>
-                <li>Add your email address as a <strong>Test User</strong> (this is critical as the app will be in "Testing" mode).</li>
+                <li>Add your email address as a <strong>Test User</strong> (this is critical as the app will be in
+                    "Testing" mode).</li>
                 <li>Add the <code>.../auth/drive</code> scope to allow the app to manage its files.</li>
             </ul>
 
             <h3>4. Generate Android OAuth Client ID</h3>
             <ul>
-                <li>Go to <strong>Credentials</strong> -> <strong>Create Credentials</strong> -> <strong>OAuth client ID</strong>.</li>
+                <li>Go to <strong>Credentials</strong> -> <strong>Create Credentials</strong> -> <strong>OAuth client
+                        ID</strong>.</li>
                 <li>Select <strong>Android</strong> as the Application type.</li>
                 <li>Enter your unique application identifier (e.g., <code>com.yourname.sinkhole</code>).</li>
                 <li>Provide your <strong>SHA-1 certificate fingerprint</strong>.</li>
@@ -54,12 +64,16 @@
 keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey</pre>
 
             <h3>5. Download google-services.json</h3>
-            <p>After creating the Android Client ID, download the <code>google-services.json</code> file and place it in the root of your project directory before building.</p>
+            <p>After creating the Android Client ID, download the <code>google-services.json</code> file and place it in
+                the root of your project directory before building.</p>
         </section>
     </div>
 
     <footer>
-        <p>&copy; 2026 Thiago Colen &bull; Built with <i class="fas fa-heart" style="color: #e25555;"></i> for the Open Source Community.</p>
+        <small><i>Made with &#129314; (and potentially some slop) by <del>Thiago
+                    Colen</del>. 🐙 No, it wasn't.
+        </small>
     </footer>
 </body>
+
 </html>
