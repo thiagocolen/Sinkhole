@@ -48,8 +48,11 @@ header {
 .logo-container img {
     width: 40px;
     height: 40px;
-    border-radius: 10px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    object-fit: cover;
+    object-position: center;
+    transform: scale(2);
+    margin-right: 15px;
+    margin-left: 10px;
 }
 
 .logo-container h1 {
@@ -73,10 +76,116 @@ nav a:hover, nav a.active {
     color: var(--primary);
 }
 
+/* Hero Section */
+.hero {
+    text-align: center;
+    padding: 6rem 10% 8rem;
+    background-color: #1b5e20;
+    background-image:
+      radial-gradient(circle at center center, #2e7d32, #1b5e20),
+      repeating-radial-gradient(
+        circle at center center,
+        #2e7d32,
+        #2e7d32,
+        10px,
+        transparent 20px,
+        transparent 10px
+      );
+    background-blend-mode: multiply;
+    color: var(--white);
+    clip-path: polygon(0 0, 100% 0, 100% 85%, 0 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.hero img.large-logo {
+    margin-bottom: 2rem;
+    border: none;
+    width: 120px;
+    height: 120px;
+    object-fit: cover;
+    object-position: center;
+    transform: scale(2.3);
+}
+
+.hero h2 {
+    font-size: 3.5rem;
+    font-weight: 800;
+    margin-bottom: 1rem;
+    letter-spacing: -0.05em;
+    text-align: center;
+    color: var(--accent);
+}
+
+.hero p {
+    font-size: 1.25rem;
+    max-width: 700px;
+    margin: 0 auto 2.5rem;
+    opacity: 0.9;
+    font-weight: 300;
+}
+
+.hero .btn-group {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+/* Buttons */
+.btn {
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.2s;
+    background-color: var(--primary);
+    color: var(--white);
+}
+
+.btn:hover {
+    background-color: var(--primary-dark);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.btn-white {
+    background-color: var(--white);
+    color: var(--primary-dark);
+}
+
+.btn-white:hover {
+    background-color: var(--bg-light);
+}
+
+.btn-outline {
+    background-color: transparent;
+    border: 2px solid rgba(255,255,255,0.3);
+    color: var(--white);
+}
+
+.btn-outline:hover {
+    background-color: rgba(255,255,255,0.1);
+    border-color: var(--white);
+}
+
+/* Container and Sections */
 .container {
     max-width: 1100px;
     margin: 4rem auto;
     padding: 0 2rem;
+}
+
+/* Home page container overlapping hero */
+.hero + .container {
+    margin: -4rem auto 0;
+    padding: 0 2rem 4rem;
+    position: relative;
+    z-index: 10;
 }
 
 section {
@@ -94,6 +203,7 @@ h1, h2, h3 {
 
 h2 {
     font-size: 1.75rem;
+    font-weight: 700;
     margin-bottom: 1.5rem;
     display: flex;
     align-items: center;
@@ -102,8 +212,43 @@ h2 {
 
 h2 i {
     color: var(--primary);
+    font-size: 1.5rem;
 }
 
+/* Grid and Cards */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.card {
+    padding: 1.5rem;
+    border-radius: 12px;
+    background-color: var(--bg-light);
+    border: 1px solid rgba(0,0,0,0.05);
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.2s, box-shadow 0.2s;
+    display: block;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+
+.card h3 {
+    margin-top: 0;
+    color: var(--primary);
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Utilities */
 pre {
     background-color: var(--code-bg);
     color: var(--code-text);
@@ -125,25 +270,6 @@ code {
     font-size: 0.9em;
 }
 
-.btn {
-    padding: 0.75rem 1.5rem;
-    border-radius: 8px;
-    text-decoration: none;
-    font-weight: 600;
-    font-size: 0.95rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    transition: all 0.2s;
-    background-color: var(--primary);
-    color: var(--white);
-}
-
-.btn:hover {
-    background-color: var(--primary-dark);
-    transform: translateY(-2px);
-}
-
 footer {
     text-align: center;
     padding: 4rem 2rem;
@@ -162,6 +288,12 @@ footer {
     }
     nav a {
         margin: 0.5rem;
+    }
+    .hero {
+        padding: 4rem 5% 6rem;
+    }
+    .hero h2 {
+        font-size: 2.25rem;
     }
     section {
         padding: 2rem;

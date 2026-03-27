@@ -1,20 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Technical Details | Sinkhole</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" type="image/png" href="./assets/favicon.png">
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <header>
         <a href="index.html" class="logo-container">
-            <img src="./assets/logo.png" alt="Sinkhole Logo">
+            <img src="./assets/nav-logo.png" alt="Sinkhole Logo">
             <h1>SINKHOLE</h1>
         </a>
         <nav>
@@ -29,21 +33,29 @@
     <div class="container">
         <section>
             <h2><i class="fas fa-code"></i> Technical Internals</h2>
-            <p>Sinkhole is built on native Android security primitives and a custom manifest-based synchronization engine. This section dives into the architecture that powers your data bridge.</p>
-            
+            <p>Sinkhole is built on native Android security primitives and a custom manifest-based synchronization
+                engine. This section dives into the architecture that powers your data bridge.</p>
+
             <h3><i class="fas fa-shield-alt"></i> Storage Access Framework (SAF)</h3>
-            <p>Unlike traditional apps that request broad "Manage External Storage" permissions, Sinkhole uses Android's modern <strong>Storage Access Framework</strong>. This ensures that the app only has access to the specific folder you explicitly grant permission to, maintaining a high level of system-wide privacy.</p>
+            <p>Unlike traditional apps that request broad "Manage External Storage" permissions, Sinkhole uses Android's
+                modern <strong>Storage Access Framework</strong>. This ensures that the app only has access to the
+                specific folder you explicitly grant permission to, maintaining a high level of system-wide privacy.</p>
 
             <h3><i class="fas fa-sync"></i> Two-Way Synchronization Engine</h3>
-            <p>The core of Sinkhole is its <code>.sync-manifest.json</code> tracking system. This file acts as the source of truth for the state of your files on both local and cloud storage.</p>
+            <p>The core of Sinkhole is its <code>.sync-manifest.json</code> tracking system. This file acts as the
+                source of truth for the state of your files on both local and cloud storage.</p>
             <ul>
-                <li><strong>State Tracking:</strong> Records the ID, modification time, size, and hash of every file in the synced directory.</li>
-                <li><strong>Deletions:</strong> Correctly identifies and propagates file deletions, ensuring your cloud mirror stays clean.</li>
-                <li><strong>Conflict Resolution:</strong> Implements a <strong>Last Write Wins (LWW)</strong> strategy based on modification timestamps to gracefully handle overlapping changes.</li>
+                <li><strong>State Tracking:</strong> Records the ID, modification time, size, and hash of every file in
+                    the synced directory.</li>
+                <li><strong>Deletions:</strong> Correctly identifies and propagates file deletions, ensuring your cloud
+                    mirror stays clean.</li>
+                <li><strong>Conflict Resolution:</strong> Implements a <strong>Last Write Wins (LWW)</strong> strategy
+                    based on modification timestamps to gracefully handle overlapping changes.</li>
             </ul>
 
             <h3><i class="fas fa-file-code"></i> Manifest Schema</h3>
-            <p>Our manifest is designed to be lightweight and portable, allowing for rapid state comparisons without the need for full file re-scanning.</p>
+            <p>Our manifest is designed to be lightweight and portable, allowing for rapid state comparisons without the
+                need for full file re-scanning.</p>
             <pre>{
   "files": {
     "my-document.md": {
@@ -57,12 +69,19 @@
 }</pre>
 
             <h3><i class="fas fa-lock"></i> Secure Authentication</h3>
-            <p>Authentication is handled directly through **Google OAuth 2.0** via the <code>react-native-google-signin</code> library. This approach means your credentials never touch our application; instead, the app uses a temporary access token with the minimum "Drive" scope necessary to manage its dedicated folder.</p>
+            <p>Authentication is handled directly through **Google OAuth 2.0** via the
+                <code>react-native-google-signin</code> library. This approach means your credentials never touch our
+                application; instead, the app uses a temporary access token with the minimum "Drive" scope necessary to
+                manage its dedicated folder.
+            </p>
         </section>
     </div>
 
     <footer>
-        <p>&copy; 2026 Thiago Colen &bull; <i>Made with &#129314; (and potentially some slop) by <del>Thiago Colen</del>.</i> &#128126; &bull; Licensed under the "Whatever" License.</p>
+        <small><i>Made with &#129314; (and potentially some slop) by <del>Thiago
+                    Colen</del>. 🐙 No, it wasn't.
+        </small>
     </footer>
 </body>
+
 </html>

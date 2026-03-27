@@ -1,20 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Developer Guide | Sinkhole</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap"
+        rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="icon" type="image/png" href="./assets/favicon.png">
     <link rel="stylesheet" href="styles.css">
 </head>
+
 <body>
     <header>
         <a href="index.html" class="logo-container">
-            <img src="./assets/logo.png" alt="Sinkhole Logo">
+            <img src="./assets/nav-logo.png" alt="Sinkhole Logo">
             <h1>SINKHOLE</h1>
         </a>
         <nav>
@@ -29,8 +33,9 @@
     <div class="container">
         <section>
             <h2><i class="fas fa-terminal"></i> Developer Guide</h2>
-            <p>Ready to contribute or build your own version of Sinkhole? This guide covers everything you need to know about setting up the development environment and generating APKs.</p>
-            
+            <p>Ready to contribute or build your own version of Sinkhole? This guide covers everything you need to know
+                about setting up the development environment and generating APKs.</p>
+
             <h3>Prerequisites</h3>
             <ul>
                 <li><strong>Node.js:</strong> Latest LTS version.</li>
@@ -48,18 +53,22 @@ npm install</pre>
 
             <h3>Building the App</h3>
             <p>Depending on your goal, you can run Sinkhole in debug mode or generate a final release APK.</p>
-            
+
             <p><strong>Debug Mode:</strong> (Runs on device/emulator with Dev Tools)</p>
             <pre>npx expo run:android</pre>
 
             <p><strong>Release Build:</strong> (Standalone optimized APK)</p>
             <pre>npm run build:apk</pre>
-            <p>The resulting APK will be located at: <code>android/app/build/outputs/apk/release/app-release.apk</code>.</p>
+            <p>The resulting APK will be located at: <code>android/app/build/outputs/apk/release/app-release.apk</code>.
+            </p>
         </section>
     </div>
 
     <footer>
-        <p>&copy; 2026 Thiago Colen &bull; <i>Made with &#129314; (and potentially some slop) by <del>Thiago Colen</del>.</i> &#128126; &bull; Licensed under the "Whatever" License.</p>
+        <small><i>Made with &#129314; (and potentially some slop) by <del>Thiago
+                    Colen</del>. 🐙 No, it wasn't.
+        </small>
     </footer>
 </body>
+
 </html>
