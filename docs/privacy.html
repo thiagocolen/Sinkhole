@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Privacy & Security | Sinkhole</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="icon" type="image/png" href="./assets/favicon.png">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <a href="index.html" class="logo-container">
+            <img src="./assets/logo.png" alt="Sinkhole Logo">
+            <h1>SINKHOLE</h1>
+        </a>
+        <nav>
+            <a href="features.html"><i class="fas fa-star"></i> Features</a>
+            <a href="technical.html"><i class="fas fa-code"></i> Technical</a>
+            <a href="guide.html"><i class="fas fa-book"></i> User Guide</a>
+            <a href="privacy.html" class="active"><i class="fas fa-user-shield"></i> Privacy</a>
+            <a href="setup.html"><i class="fas fa-key"></i> API Setup</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <section>
+            <h2><i class="fas fa-user-shield"></i> Privacy & Data Security</h2>
+            <p>At its core, Sinkhole is built on the principle of <strong>data ownership</strong>. However, syncing data to the cloud (Google Drive) or using third-party backup services (GitHub) introduces unique privacy challenges. This guide explores how to achieve true end-to-end encryption for your sensitive vaults.</p>
+            
+            <h3><i class="fas fa-cloud-slash"></i> The "Publicity" Problem</h3>
+            <p>While Google Drive is secure, it is not <em>zero-knowledge</em> by default. If you use GitHub for secondary backups, making your repository public exposes your data to the world. Even private repositories are still hosted on third-party infrastructure.</p>
+
+            <h3><i class="fas fa-key"></i> Solution: Local Cryptography</h3>
+            <p>The most effective way to secure your vault is to encrypt it <strong>before</strong> it reaches any semi-public platform. By using tools like <a href="https://github.com/thiagocolen/file-encryptor" target="_blank">File Encryptor</a>, you can transform your readable files into tamper-proof binary blobs.</p>
+
+            <div style="background-color: var(--primary-dark); color: var(--white); padding: 2rem; border-radius: 12px; margin: 2rem 0;">
+                <h4 style="margin-top: 0; color: var(--accent);"><i class="fas fa-robot"></i> Recommended: Agentic Backup Workflow</h4>
+                <p>You can automate your security using an autonomous agent (like <strong>Gemini CLI</strong>). Here is a professional workflow for maximum privacy:</p>
+                <ol style="margin-bottom: 0;">
+                    <li><strong>Sync to Drive:</strong> Use Sinkhole on Android to keep your local vault mirrored to Google Drive.</li>
+                    <li><strong>Agentic Fetch:</strong> An agent on your PC pulls the latest changes from Google Drive.</li>
+                    <li><strong>Recursive Encryption:</strong> The agent runs <code>file-encryptor</code> with a strong password to generate <code>.enc</code> files.</li>
+                    <li><strong>Git Backup:</strong> The agent pushes the encrypted <code>.enc</code> files to a GitHub repository.</li>
+                </ol>
+            </div>
+
+            <h3><i class="fas fa-tools"></i> Implementation with File Encryptor</h3>
+            <p>If you are using an agentic workflow, you can trigger encryption non-interactively:</p>
+            <pre># Set your secret password
+export FILE_ENCRYPTOR_PASSWORD="your-strong-password"
+
+# Encrypt your vault for GitHub backup
+node file-encryptor/index.js encrypt ./my-vault --json</pre>
+            <p>This ensures that even if your GitHub repository or Google Drive is compromised, your data remains an unreadable "sinkhole" to anyone without your master password.</p>
+        </section>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Thiago Colen &bull; <i>Made with &#129314; (and potentially some slop) by <del>Thiago Colen</del>.</i> &#128126; &bull; Licensed under the "Whatever" License.</p>
+    </footer>
+</body>
+</html>
